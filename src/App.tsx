@@ -14,6 +14,7 @@ import Digests from "./pages/Digests";
 import DigestNew from "./pages/DigestNew";
 import Scorecard from "./pages/Scorecard";
 import NotFound from "./pages/NotFound";
+import MtsMockup from "./pages/MtsMockup";
 
 const queryClient = new QueryClient();
 
@@ -24,7 +25,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/triage" replace />} />
+          <Route path="/" element={<Navigate to="/mts-mockup" replace />} />
           <Route path="/triage" element={<Index />} />
           <Route path="/bills" element={<Bills />} />
           <Route path="/bills/:id" element={<BillDetail />} />
@@ -34,6 +35,7 @@ const App = () => (
           <Route path="/digests" element={<Digests />} />
           <Route path="/digests/new" element={<DigestNew />} />
           <Route path="/scorecard" element={<Scorecard />} />
+          <Route path="/mts-mockup" element={<MtsMockup />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
