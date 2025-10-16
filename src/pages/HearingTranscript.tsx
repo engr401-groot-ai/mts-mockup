@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import MtsNavBar from '../components/MtsNavbar.tsx';
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/hearings/PageHeader';
 import LoadingState from '../components/hearings/LoadingState';
@@ -121,22 +122,30 @@ const HearingTranscript = () => {
 
     if (error) {
         return (
-            <div className="p-8 max-w-6xl mx-auto">
-                <PageHeader 
-                    backLink="/hearings-list"
-                    backLabel="Back to Hearings List"
-                    title="Error Loading Transcript"
-                />
-                <ErrorDisplay 
-                    message={error}
-                    onRetry={fetchTranscript}
-                />
-            </div>
+            <>
+                <MtsNavBar />
+
+                <div className="p-8 max-w-6xl mx-auto">
+                    <PageHeader 
+                        backLink="/hearings-list"
+                        backLabel="Back to Hearings List"
+                        title="Error Loading Transcript"
+                    />
+                    
+                    <ErrorDisplay 
+                        message={error}
+                        onRetry={fetchTranscript}
+                    />
+                </div>
+            </>
         );
     }
 
     return (
+        <>
         <div className="p-8 max-w-6xl mx-auto min-h-screen bg-gray-50">
+            <MtsNavBar />
+
             <PageHeader 
                 backLink="/hearings-list"
                 backLabel="Back to Hearings List"
@@ -205,6 +214,7 @@ const HearingTranscript = () => {
                 </div>
             )}
         </div>
+        </>
     );
 };
 

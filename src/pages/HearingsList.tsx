@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import MtsNavBar from '../components/MtsNavbar.tsx';
 import TranscriptForm from '../components/hearings/TranscriptForm';
 import TranscriptTable from '../components/hearings/TranscriptTable';
 import EmptyState from '../components/hearings/EmptyState';
@@ -74,6 +75,7 @@ const HearingsList = () => {
     if (error) {
         return (
             <div className="p-8 max-w-6xl mx-auto">
+                <MtsNavBar />
                 <div className="mb-6 flex justify-between items-center">
                     <h1 className="text-2xl font-bold">Hearings & Transcripts</h1>
                     <button
@@ -101,6 +103,7 @@ const HearingsList = () => {
 
     return (
         <div className="p-8 max-w-6xl mx-auto">
+            <MtsNavBar />
             <div className="mb-6 flex justify-between items-center">
                 <div>
                     <h1 className="text-2xl font-bold mb-2">Hearings & Transcripts</h1>
