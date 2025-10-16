@@ -47,9 +47,13 @@ const HearingTranscript = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-
     const [currentTime, setCurrentTime] = useState(0);
     const videoPlayerRef = useRef<VideoPlayerRef>(null);
+    const [searchResults, setSearchResults] = useState<{
+        total: number;
+        current: number;
+        matches: Array<{ segmentId: number; matchIndex: number }>;
+    }>({ total: 0, current: 0, matches: [] });
 
     useEffect(() => {
         if (id) {
@@ -107,6 +111,36 @@ const HearingTranscript = () => {
         }
     }
 
+    const handleSearchResultsChange = (results: { total: number; matches: Array<{ segmentId: number; matchIndex: number }> }) => {
+        setSearchResults(prev => ({
+            ...results,
+            current: results.total > 0 ? Math.min(prev.current || 1, results.total) : 0
+        }));
+    };
+
+    const handleNextResult = () => {
+        setSearchResults(prev => ({
+            ...prev,
+            current: prev.current < prev.total ? prev.current + 1 : 1
+        }));
+    };
+
+    const handlePrevResult = () => {
+        setSearchResults(prev => ({
+            ...prev,
+            current: prev.current > 1 ? prev.current - 1 : prev.total
+        }));
+    };
+
+    const handleSearchChange = (value: string) => {
+        setSearchTerm(value);
+        if (!value) {
+            setSearchResults({ total: 0, current: 0, matches: [] });
+        } else {
+            setSearchResults(prev => ({ ...prev, current: 1 }));
+        }
+    };
+
     if (loading) {
         return (
             <div className="p-8 max-w-6xl mx-auto">
@@ -159,8 +193,14 @@ const HearingTranscript = () => {
 
              <TranscriptSearchBar 
                 searchTerm={searchTerm}
-                onSearchChange={setSearchTerm}
+                onSearchChange={handleSearchChange}
                 onDownload={downloadTranscript}
+                searchResults={searchResults.total > 0 ? {
+                    total: searchResults.total,
+                    current: searchResults.current
+                } : undefined}
+                onNextResult={handleNextResult}
+                onPrevResult={handlePrevResult}
             />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
@@ -192,6 +232,8 @@ const HearingTranscript = () => {
                                 onTimestampClick={handleTimestampClick}
                                 currentTime={currentTime}
                                 searchTerm={searchTerm}
+                                currentSearchIndex={searchResults.current - 1}
+                                onSearchResultsChange={handleSearchResultsChange}
                             />
                         ) : (
                             <div className="p-4">
@@ -206,11 +248,6 @@ const HearingTranscript = () => {
             {transcript?.fullText && (
                 <div className="mt-6 text-center text-sm text-gray-500">
                     Total characters: {transcript.fullText.length.toLocaleString()}
-                    {searchTerm && (
-                        <span className="ml-4">
-                            Matches: {(transcript.fullText.match(new RegExp(searchTerm, 'gi')) || []).length}
-                        </span>
-                    )}
                 </div>
             )}
         </div>
