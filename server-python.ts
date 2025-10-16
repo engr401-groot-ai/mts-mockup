@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // NEW SERVER: Integrates with Python Whisper API
 // RUN: npx tsx server-python.ts
 
@@ -109,6 +110,8 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
         }))
       })),
       fullText: response.data.transcript.text,
+      youtube_url: response.data.transcript.youtube_url,
+      segments: response.data.transcript.segments,
       gcsPath: response.data.gcs_path,
       cached: response.data.cached,
       metadata: {
@@ -157,6 +160,11 @@ app.get('/api/transcript/:hearingId', async (req: Request, res: Response) => {
     const response = await axios.get(
       `${PYTHON_API_URL}/transcript/${hearingId}`
     );
+
+    console.log('YouTube URL from Python:', response.data.transcript?.youtube_url);
+
+    const t = response.data.transcript;
+    console.log(`📄 ${t.id} | "${t.title}" | ${t.youtube_url} | ${Math.round(t.duration)}s | ${t.text?.length || 0} chars`);
     
     // Format to match frontend expectations
     const formattedResponse = {
@@ -169,6 +177,8 @@ app.get('/api/transcript/:hearingId', async (req: Request, res: Response) => {
         }))
       })),
       fullText: response.data.transcript.text,
+      youtube_url: response.data.transcript.youtube_url,
+      segments: response.data.transcript.segments,
       gcsPath: response.data.gcs_path,
       metadata: {
         id: response.data.transcript.id,
@@ -177,6 +187,8 @@ app.get('/api/transcript/:hearingId', async (req: Request, res: Response) => {
         model: response.data.transcript.model
       }
     };
+
+    console.log('Formatted response youtube_url:', formattedResponse.youtube_url);
     
     res.json(formattedResponse);
   } catch (error) {

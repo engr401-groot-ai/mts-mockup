@@ -25,3 +25,4 @@ dist-ssr
 bun.lockb
 components.json
 .env
+.venv/

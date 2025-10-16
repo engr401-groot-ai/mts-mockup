@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/hearings/PageHeader';
 import LoadingState from '../components/hearings/LoadingState';
@@ -6,6 +6,7 @@ import ErrorDisplay from '../components/hearings/ErrorDisplay';
 import MetadataCard from '../components/hearings/MetadataCard';
 import TranscriptSearchBar from '../components/hearings/TranscriptSearchBar';
 import TranscriptDisplay from '../components/hearings/TranscriptDisplay';
+import VideoPlayer, { VideoPlayerRef } from '../components/hearings/VideoPlayer';
 
 interface Word {
     word: string;
@@ -18,9 +19,18 @@ interface TranscriptBlock {
     words: Word[];
 }
 
+interface TranscriptSegement {
+    id: number;
+    start: number;
+    end: number;
+    text: string;
+}
+
 interface TranscriptData {
     transcription: TranscriptBlock[];
     fullText?: string;
+    youtube_url?: string;
+    segments?: TranscriptSegement[];
     metadata?: {
         id: string;
         title: string;
@@ -36,6 +46,9 @@ const HearingTranscript = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+
+    const [currentTime, setCurrentTime] = useState(0);
+    const videoPlayerRef = useRef<VideoPlayerRef>(null);
 
     useEffect(() => {
         if (id) {
@@ -58,6 +71,8 @@ const HearingTranscript = () => {
             }
 
             const data = await res.json();
+            console.log('Transcript data:', data);
+            console.log('YouTube URL:', data.youtube_url);
             setTranscript(data);
         } catch (err) {
             console.error('Error fetching transcript:', err);
@@ -79,6 +94,17 @@ const HearingTranscript = () => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     };
+
+    const handleProgress = (progress: { playedSeconds: number }) => {
+        setCurrentTime(progress.playedSeconds);
+    };
+
+    const handleTimestampClick = (startTime: number) => {
+        console.log('Seeking to:', startTime);
+        if (videoPlayerRef.current) {
+            videoPlayerRef.current.seekTo(startTime);
+        }
+    }
 
     if (loading) {
         return (
@@ -122,18 +148,50 @@ const HearingTranscript = () => {
                 <MetadataCard metadata={transcript.metadata} />
             )}
 
-            <TranscriptSearchBar 
+             <TranscriptSearchBar 
                 searchTerm={searchTerm}
                 onSearchChange={setSearchTerm}
                 onDownload={downloadTranscript}
             />
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                <div className="space-y-4">
+                    <div className="bg-white rounded-lg shadow p-4">
+                        {transcript?.youtube_url ? (
+                            <VideoPlayer 
+                                ref={videoPlayerRef}
+                                url={transcript.youtube_url} 
+                                onProgress={handleProgress}
+                            />
+                        ) : (
+                            <div className="bg-gray-100 h-64 flex items-center justify-center rounded">
+                                <p className="text-gray-500">No video available</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-            {transcript?.transcription && (
-                <TranscriptDisplay 
-                    transcription={transcript.transcription}
-                    searchTerm={searchTerm}
-                />
-            )}
+                <div className="space-y-4">
+                    <div className="bg-white rounded-lg shadow">
+                        <div className="p-4 border-b">
+                            <h3 className="text-lg font-semibold">Transcript Details</h3>
+                        </div>
+                        
+                        {transcript?.segments ? (
+                            <TranscriptDisplay 
+                                segments={transcript.segments}
+                                onTimestampClick={handleTimestampClick}
+                                currentTime={currentTime}
+                                searchTerm={searchTerm}
+                            />
+                        ) : (
+                            <div className="p-4">
+                                <p className="text-gray-500">No transcript available.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
 
             {/* Stats Footer */}
             {transcript?.fullText && (

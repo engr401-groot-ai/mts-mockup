@@ -1,94 +1,97 @@
 import React from 'react';
 
-interface Word {
-    word: string;
-    startTime: number;
-    endTime: number;
+interface TranscriptSegment {
+    id: number,
+    start: number,
+    end: number,
+    text: string,
 }
 
-interface TranscriptBlock {
-    transcript: string;
-    words: Word[];
-}
-
-interface TranscriptDisplayProps {
-    transcription: TranscriptBlock[];
+interface TranscriptProps {
+    segments: TranscriptSegment[];
+    onTimestampClick: (startTime: number) => void;
+    currentTime?: number;
     searchTerm?: string;
-    maxHeight?: string;
 }
 
-const TranscriptDisplay: React.FC<TranscriptDisplayProps> = ({
-    transcription,
+const TranscriptDisplay: React.FC<TranscriptProps> = ({
+    segments,
+    onTimestampClick,
+    currentTime = 0,
     searchTerm = '',
-    maxHeight = '600px'
 }) => {
     const formatTime = (seconds: number) => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = Math.floor(seconds % 60);
-        
-        if (hours > 0) {
-            return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        }
-        return `${minutes}:${secs.toString().padStart(2, '0')}`;
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     };
 
-    const highlightText = (text: string) => {
+    const highlightText = (text: string, searchTerm: string): React.ReactNode => {
         if (!searchTerm) return text;
-        const parts = text.split(new RegExp(`(${searchTerm})`, 'gi'));
-        return parts.map((part, i) =>
-            part.toLowerCase() === searchTerm.toLowerCase() ? (
-                <mark key={i} className="bg-yellow-200 px-1 rounded">{part}</mark>
-            ) : part
-        );
-    };
 
-    if (!transcription || transcription.length === 0) {
+        const lowerText = text.toLowerCase();
+        const lowerSearchTerm = searchTerm.toLowerCase();
+
+        const parts: React.ReactNode[] = [];
+        let lastIndex = 0;
+        let currentIndex = lowerText.indexOf(lowerSearchTerm, lastIndex);
+
+        while (currentIndex !== -1) {
+            if (currentIndex > lastIndex) {
+                parts.push(text.slice(lastIndex, currentIndex));
+            }
+
+            parts.push(
+                <mark key={`highlight-${currentIndex}`} className="bg-yellow-200 px-1 rounded">
+                    {text.slice(currentIndex, currentIndex + searchTerm.length)}
+                </mark>
+            );
+
+            lastIndex = currentIndex + searchTerm.length;
+            currentIndex = lowerText.indexOf(lowerSearchTerm, lastIndex);
+        }
+
+        if (lastIndex < text.length) {
+            parts.push(text.slice(lastIndex));
+        }
+
+        return parts;
+    }
+
+    const isCurrentSegment = (start: number, end: number): boolean => {
+        return currentTime >= start && currentTime <= end;
+    }
+
+    if (!segments || segments.length === 0) {
         return (
-            <div className="text-center py-12">
-                <p className="text-gray-500">No transcript data available</p>
+            <div className="p-4">
+                <p className="text-gray-500">No transcript available.</p>
             </div>
-        );
+        )
     }
 
     return (
-        <div className="bg-white border rounded-lg shadow-sm">
-            <div className="px-6 py-4 bg-gray-50 border-b rounded-t-lg">
-                <h2 className="font-bold text-lg">Transcript</h2>
-            </div>
-            
-            <div className="p-6 overflow-y-auto" style={{ maxHeight }}>
-                <div className="space-y-6">
-                    {transcription.map((block, idx) => (
-                        <div key={idx} className="pb-6 border-b last:border-b-0">
-                            <p className="text-base leading-relaxed mb-3">
-                                {highlightText(block.transcript)}
-                            </p>
-                            
-                            {block.words && block.words.length > 0 && (
-                                <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                                    {block.words.slice(0, 10).map((w, widx) => (
-                                        <span 
-                                            key={widx}
-                                            className="inline-flex items-center gap-1 bg-gray-50 px-2 py-1 rounded"
-                                        >
-                                            <span>{w.word}</span>
-                                            <span className="text-gray-400">
-                                                {formatTime(w.startTime)}
-                                            </span>
-                                        </span>
-                                    ))}
-                                    {block.words.length > 10 && (
-                                        <span className="text-gray-400 px-2 py-1">
-                                            ... +{block.words.length - 10} more words
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    ))}
+        <div className="h-96 overflow-y-auto space-y-2 p-4">
+            {segments.map((segment) => (
+                <div
+                    key={segment.id}
+                    className={`flex gap-3 rounded-lg transition-colors ${
+                        isCurrentSegment(segment.start, segment.end)
+                            ? 'bg-blue-100 border-l-4 border-blue-500'
+                            : 'hover:bg-gray-50'
+                    }`}
+                >
+                    <button
+                        onClick={() => onTimestampClick(segment.start)}
+                        className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm whitespace-nowrap font-medium min-w-[3rem] text-left"
+                    >
+                        {formatTime(segment.start)}
+                    </button>
+                    <p className="text-gray-800 leading-relaxed">
+                        {highlightText(segment.text, searchTerm)}
+                    </p>
                 </div>
-            </div>
+            ))}
         </div>
     );
 };
