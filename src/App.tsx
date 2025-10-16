@@ -15,7 +15,8 @@ import DigestNew from "./pages/DigestNew";
 import Scorecard from "./pages/Scorecard";
 import NotFound from "./pages/NotFound";
 import MtsMockup from "./pages/MtsMockup";
-import TranscriptAnalysis from "./pages/TranscriptAnalysis";
+import HearingsList from "./pages/HearingsList";
+import HearingTranscript from "./pages/HearingTranscript";
 
 const queryClient = new QueryClient();
 
@@ -37,7 +38,8 @@ const App = () => (
           <Route path="/digests/new" element={<DigestNew />} />
           <Route path="/scorecard" element={<Scorecard />} />
           <Route path="/mts-mockup" element={<MtsMockup />} />
-          <Route path="/transcript-analysis" element={<TranscriptAnalysis />} />
+          <Route path="/hearings-list" element={<HearingsList />} />
+          <Route path="/hearing/:id" element={<HearingTranscript />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -17,7 +17,7 @@ const MtsMockup = () => {
                     <span className="nav-separator">|</span>
                     <a href="#" className="nav-link">Lists</a>
                     <span className="nav-separator">|</span>
-                    <a href="/transcript-analysis" className="nav-link">Transcripts</a>
+                    <a href="/hearings-list" className="nav-link">Hearings</a>
                     <span className="nav-separator">|</span>
                     <a href="#" className="nav-link">Logout</a>
                     <span className="text-muted">[ellisa4]</span>
