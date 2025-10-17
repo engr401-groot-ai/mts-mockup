@@ -14,7 +14,7 @@ const MtsNavbar: React.FC = () => {
                     <span className="nav-separator">|</span>
                     <a href="#" className="nav-link">Lists</a>
                     <span className="nav-separator">|</span>
-                    <a href="/hearings-list" className="nav-link">Hearings</a>
+                    <a href="/hearings" className="nav-link">Hearings</a>
                     <span className="nav-separator">|</span>
                     <a href="#" className="nav-link">Logout</a>
                     <span className="text-muted">[ellisa4]</span>

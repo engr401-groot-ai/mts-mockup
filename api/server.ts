@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// NEW SERVER: Integrates with Python Whisper API
-// RUN: npx tsx server-python.ts
+// RUN: npx tsx server.ts
 
 import express from 'express';
 import type { Request, Response } from 'express';
