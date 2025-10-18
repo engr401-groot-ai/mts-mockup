@@ -10,7 +10,7 @@ import {
 import { 
     getCommitteesByChamber, 
     type Chamber 
-} from '../../constants/committees';
+} from '../../lib/constants/committees';
 
 interface TranscriptForm2Props {
     onSubmit: (data: TranscriptionRequest) => Promise<void>;

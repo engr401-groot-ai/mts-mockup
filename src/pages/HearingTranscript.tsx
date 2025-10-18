@@ -122,7 +122,7 @@ const HearingTranscript = () => {
         return (
             <div className="p-8 max-w-6xl mx-auto">
                 <PageHeader 
-                    backLink="/hearings2"
+                    backLink="/hearings"
                     backLabel="Back to Hearings List"
                     title="Loading Transcript..."
                 />
