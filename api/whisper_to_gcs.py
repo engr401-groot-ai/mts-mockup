@@ -268,29 +268,34 @@ def transcribe():
     data = request.json
     youtube_url = data.get('youtube_url')
     year = data.get('year')
-    topic = data.get('topic')
+    committee = data.get('committee')
     bill_name = data.get('bill_name')
+    bill_ids = data.get('bill_ids', [])
     video_title = data.get('video_title')
     hearing_date = data.get('hearing_date', datetime.now().strftime('%Y-%m-%d'))
+    room = data.get('room', '')
+    ampm = data.get('ampm', '')
 
     # validate all fields
-    if not all([youtube_url, year, topic, bill_name, video_title, hearing_date]):
+    if not all([youtube_url, year, committee, bill_name, video_title, hearing_date]):
         return jsonify({
             'error': 'Missing required fields',
-            'required': ['youtube_url', 'year', 'topic', 'bill_name', 'video_title', 'hearing_date']
+            'required': ['youtube_url', 'year', 'committee', 'bill_name', 'video_title', 'hearing_date']
         }), 400
     
     year = sanitize_path(year)
-    topic = sanitize_path(topic)
+    committee = sanitize_path(committee)
     bill_name = sanitize_path(bill_name)
     video_title = sanitize_path(video_title)
+    room = sanitize_path(room) if room else ''
+    ampm = sanitize_path(ampm) if ampm else ''
     
     temp_dir = None
     audio_path = None
     
     try:
-        # build GCS folder path: hearing-videos/YEAR/TOPIC/BILL_NAME/VIDEO_TITLE/
-        folder_path = f"{year}/{topic}/{bill_name}/{video_title}"
+        # build GCS folder path: hearing-videos/YEAR/COMMITTEE/BILL_NAME/VIDEO_TITLE/
+        folder_path = f"{year}/{committee}/{bill_name}/{video_title}"
         metadata_path = f"{folder_path}/metadata.json"
         transcript_path = f"{folder_path}/transcript.json"
 
@@ -309,7 +314,7 @@ def transcribe():
         # log transcription
         print(f"\n{'='*60}")
         print(f"Starting transcription for: {folder_path}")
-        print(f"Year: {year} | Topic: {topic} | Bill: {bill_name}")
+        print(f"Year: {year} | Committee: {committee} | Bill: {bill_name}")
         print(f"Video: {video_title}")
         print(f"{'='*60}\n")
 
@@ -331,7 +336,7 @@ def transcribe():
         print(f"{'='*60}\n")
 
         # generate meta data and transcript json
-        hearing_id = f"{year}_{topic}_{bill_name}_{video_title}"
+        hearing_id = f"{year}_{committee}_{bill_name}_{video_title}"
 
         metadata = {
             'hearing_id': hearing_id,
@@ -340,9 +345,12 @@ def transcribe():
             'duration': duration,
             'youtube_url': youtube_url,
             'year': year,
-            'topic': topic,
+            'committee': committee,
             'bill_name': bill_name,
+            'bill_ids': bill_ids,
             'video_title': video_title,
+            'room': room,
+            'ampm': ampm,
             'folder_path': folder_path,
             'created_at': datetime.now().isoformat(),
         }
@@ -468,7 +476,7 @@ def list_transcripts():
 
 # Run the Flask app
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
+    port = int(os.getenv('PORT', 5001))
     print(f"\n{'='*60}")
     print(f"Starting Transcription API on port {port}")
     print(f"Model: {MODEL_NAME}")
