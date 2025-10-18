@@ -244,37 +244,9 @@ pip list | grep -E "(flask|whisper|google-cloud-storage|yt-dlp)"
 
 The application has three components that need to run simultaneously:
 
-### Terminal 1: Frontend Development Server
 
-```bash
-npm run dev
-```
 
-This starts the Vite development server, typically at `http://localhost:8080`.
-
-**Expected output:**
-```
-VITE v6.x.x  ready in XXX ms
-
-➜  Local:   http://localhost:8080/
-➜  Network: use --host to expose
-```
-
-### Terminal 2: Node.js Backend API
-
-```bash
-npx tsx api/server.ts
-```
-
-This starts the Express server at `http://localhost:3001`.
-
-**Expected output:**
-```
-Server running on http://localhost:3001
-Python API: http://localhost:5001
-```
-
-### Terminal 3: Python Transcription Service
+### Terminal 1: Python Transcription Service
 
 Make sure your virtual environment is activated first!
 
@@ -294,10 +266,66 @@ This starts the Python Flask API at `http://localhost:5001`.
 ```
 Loading Whisper model...
 Model 'large-v3-turbo' loaded successfully.
- * Running on http://127.0.0.1:5001
+
+============================================================
+Starting Transcription API on port 5001
+Model: large-v3-turbo
+GCS Bucket: hearing-videos
+Chunk Length: 10.0 minutes
+============================================================
+
+ * Serving Flask app 'hearing-transcription'
+ * Debug mode: on
 ```
 
 > **Note**: The first time you run the Python service, Whisper will download the AI model (~2GB for large-v3-turbo). This is a one-time download.
+
+> **Troubleshooting:**
+> If you get an error like `File ... was not found.` or `DefaultCredentialsError` about your Google Cloud key, make sure the environment variable is set and points to the correct file. You can set it in your terminal with:
+> ```bash
+> export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json
+> ```
+> Replace `/path/to/your/service-account-key.json` with the actual path to your downloaded key file.
+
+### Terminal 2: Node.js Backend API
+
+```bash
+npx tsx api/server.ts
+```
+
+This starts the Express server at `http://localhost:3001`.
+
+**Expected output:**
+```
+============================================================
+Node.js+Express Server Started
+============================================================
+Port: 3001
+Python API: http://localhost:5001
+============================================================
+
+    Python API is reachable
+    Model: large-v3-turbo
+    Bucket: hearing_videos
+    Chunk Length: 10 minutes
+```
+
+### Terminal 3: Frontend Development Server
+
+```bash
+npm run dev
+```
+
+This starts the Vite development server, typically at `http://localhost:8080`.
+
+**Expected output:**
+```
+VITE v6.4.0  ready in 155 ms
+
+   ➜  Local:   http://localhost:8080/
+   ➜  Network: http://168.105.114.234:8080/
+   ➜  press h + enter to show help
+```
 
 ---
 
