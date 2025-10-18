@@ -14,56 +14,106 @@ This project consists of:
 
 ---
 
-## Prerequisites
-
-Before you begin, ensure you have the following installed on your machine:
-
-- **Node.js** (v18 or higher) - [Download here](https://nodejs.org/)
-- **Python** (v3.9 or higher) - [Download here](https://www.python.org/downloads/)
-- **Git** - [Download here](https://git-scm.com/downloads/)
-- **FFmpeg** - Required for audio processing (see installation below)
-- **npm** - Comes with Node.js
-
----
-
 ## Phase 1: System Dependencies
 
-### Install FFmpeg
+You must have the following system dependencies installed **and verified** before proceeding:
+
+### 1. Node.js
+
+- **Install:** [Download here](https://nodejs.org/)
+- **Verify installation:**
+   **Terminal command:**
+   ```bash
+   node --version
+   ```
+
+### 2. npm (Node Package Manager)
+
+- **Comes with Node.js**
+- **Verify installation:**
+   **Terminal command:**
+   ```bash
+   npm --version
+   ```
+
+### 3. Python
+
+- **Install:** [Download here](https://www.python.org/downloads/)
+- **Verify installation:**
+   **Terminal command:**
+   ```bash
+   python3 --version
+   ```
+
+### 4. Git
+
+- **Install:** [Download here](https://git-scm.com/downloads/)
+- **Verify installation:**
+   **Terminal command:**
+   ```bash
+   git --version
+   ```
+
+### 5. FFmpeg
 
 FFmpeg is required for audio/video processing in the transcription service.
 
-#### macOS (using Homebrew)
+#### Install FFmpeg
+
+**macOS (using Homebrew):**
+**Terminal command:**
 ```bash
 brew install ffmpeg
 ```
 
-#### Ubuntu/Debian
+**Ubuntu/Debian:**
+**Terminal command:**
 ```bash
 sudo apt update
 sudo apt install ffmpeg
 ```
 
-#### Windows (using Chocolatey)
+**Windows (using Chocolatey):**
+**Terminal command:**
 ```bash
 choco install ffmpeg
 ```
 
 Or download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-### Verify FFmpeg Installation
+**Verify FFmpeg installation:**
+**Terminal command:**
 ```bash
 ffmpeg -version
 ```
 
 ---
 
+
 ## Phase 2: Clone Repository
 
+You can clone the repository using either the command line **or** GitHub Desktop:
+
+### Option 1: Command Line
+
+**Terminal command:**
 ```bash
 # Clone the repository
 git clone https://github.com/engr401-groot-ai/mts-mockup.git
 cd mts-mockup
 ```
+
+### Option 2: GitHub Desktop
+
+1. Download and install [GitHub Desktop](https://desktop.github.com/)
+2. Open GitHub Desktop and sign in with your GitHub account
+3. Click **File → Clone repository...**
+4. In the **URL** tab, enter:
+   ```
+   https://github.com/engr401-groot-ai/mts-mockup.git
+   ```
+5. Choose a local path to save the project and click **Clone**
+6. Open the project folder in your code editor
 
 ---
 
@@ -78,8 +128,8 @@ You'll need access to the **Google Cloud service account JSON key file** for the
 
 1. **Obtain the Service Account Key**
    
-   **Option A: Get from other member**
-   - Request the key JSON key file from another member 
+   **Option A: Get from another member**
+   - Ask for the key JSON key file from another member 
    - **Everyone uses the same key file** - no need to create individual keys
    - Place it in a secure location on your computer
    
@@ -115,6 +165,7 @@ Navigate to the project directory if you haven't already
 
 Then install all Node.js dependencies:
 
+**Terminal command:**
 ```bash
 npm install
 ```
@@ -130,6 +181,7 @@ This installs all dependencies including:
 
 Create a `.env` file in the project root:
 
+**Terminal command:**
 ```bash
 touch .env
 ```
@@ -157,15 +209,21 @@ WHISPER_MODEL_NAME=large-v3-turbo
 
 ### 1. Create Python Virtual Environment
 
+**Terminal command:**
 ```bash
 # Create virtual environment
 python3 -m venv .venv
+```
 
-# Activate virtual environment
-# On macOS/Linux:
+**Terminal command:**
+```bash
+# Activate virtual environment (macOS/Linux)
 source .venv/bin/activate
+```
 
-# On Windows:
+**Terminal command:**
+```bash
+# Activate virtual environment (Windows)
 .venv\Scripts\activate
 ```
 
@@ -173,9 +231,13 @@ You should see `(.venv)` in your terminal prompt.
 
 ### 2. Install Python Dependencies
 
+**Terminal command:**
 ```bash
 pip install --upgrade pip
+```
 
+**Terminal command:**
+```bash
 # Install required packages
 pip install flask flask-cors openai-whisper google-cloud-storage yt-dlp
 ```
@@ -189,10 +251,14 @@ pip install flask flask-cors openai-whisper google-cloud-storage yt-dlp
 
 ### 3. Verify Python Setup
 
+**Terminal command:**
 ```bash
 # Check Python version
 python --version
+```
 
+**Terminal command:**
+```bash
 # Verify packages installed
 pip list | grep -E "(flask|whisper|google-cloud-storage|yt-dlp)"
 ```
@@ -205,6 +271,7 @@ The application has three components that need to run simultaneously:
 
 ### Terminal 1: Frontend Development Server
 
+**Terminal command:**
 ```bash
 npm run dev
 ```
@@ -221,6 +288,7 @@ VITE v6.x.x  ready in XXX ms
 
 ### Terminal 2: Node.js Backend API
 
+**Terminal command:**
 ```bash
 npx tsx api/server.ts
 ```
@@ -237,12 +305,20 @@ Python API: http://localhost:5001
 
 Make sure your virtual environment is activated first!
 
+**Terminal command:**
 ```bash
-# Activate if not already active
-source .venv/bin/activate  # macOS/Linux
-# or
-.venv\Scripts\activate     # Windows
+# Activate if not already active (macOS/Linux)
+source .venv/bin/activate
+```
 
+**Terminal command:**
+```bash
+# Activate if not already active (Windows)
+.venv\Scripts\activate
+```
+
+**Terminal command:**
+```bash
 # Run the Flask API
 python api/hearing-transcription.py
 ```
@@ -270,11 +346,13 @@ You should see the MTS interface.
 ### 2. Check API Health
 
 **Node.js API:**
+**Terminal command:**
 ```bash
 curl http://localhost:3001/health
 ```
 
 **Python API:**
+**Terminal command:**
 ```bash
 curl http://localhost:5001/health
 ```
