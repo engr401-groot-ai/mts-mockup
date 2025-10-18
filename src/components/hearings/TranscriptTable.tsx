@@ -1,26 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import type { TranscriptListItem } from '../../types/hearings';
+import { formatDateTime, formatDuration } from '../../lib/formatUtils';
 
 interface TranscriptTableProps {
     transcripts: TranscriptListItem[];
 }
 
 const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        return date.toLocaleString();
-    };
-
-    const formatDuration = (seconds: number) => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        if (hours > 0) {
-            return `${hours}h ${minutes}m`;
-        }
-        return `${minutes}m`;
-    };
-
     if (transcripts.length === 0) {
         return null;
     }
@@ -51,7 +38,7 @@ const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
                                 {transcript.bill_name}
                             </td>
                             <td className="px-4 py-3 text-sm">
-                                {formatDate(transcript.date)}
+                                {formatDateTime(transcript.date)}
                             </td>
                             <td className="px-4 py-3 text-sm">
                                 {formatDuration(transcript.duration)}

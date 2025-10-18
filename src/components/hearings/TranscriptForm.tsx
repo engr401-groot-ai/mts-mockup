@@ -12,12 +12,19 @@ import {
     type Chamber 
 } from '../../lib/constants/committees';
 
-interface TranscriptForm2Props {
+interface TranscriptFormProps {
     onSubmit: (data: TranscriptionRequest) => Promise<void>;
     onCancel?: () => void;
 }
 
-const TranscriptForm: React.FC<TranscriptForm2Props> = ({ onSubmit, onCancel }) => {
+/**
+ * TranscriptForm Component
+ * 
+ * Form for creating new hearing transcripts. Handles validation,
+ * auto-generates hearing IDs and folder paths, and submits data
+ * for transcription processing.
+ */
+const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) => {
     const [youtubeUrl, setYoutubeUrl] = useState('');
     const [hearingDate, setHearingDate] = useState('');
     const [chamber, setChamber] = useState<Chamber>('');
@@ -29,8 +36,10 @@ const TranscriptForm: React.FC<TranscriptForm2Props> = ({ onSubmit, onCancel }) 
     const [transcribing, setTranscribing] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
+    // Filter committees based on selected chamber
     const availableCommittees = useMemo(() => getCommitteesByChamber(chamber), [chamber]);
 
+    // Auto-generate hearing ID for preview
     const hearingId = useMemo(() => {
         if (!hearingDate || !committee || !billIds || !room) {
             return '';
@@ -38,6 +47,7 @@ const TranscriptForm: React.FC<TranscriptForm2Props> = ({ onSubmit, onCancel }) 
         return generateHearingId(hearingDate, committee, billIds, room, ampm);
     }, [hearingDate, committee, billIds, room, ampm]);
 
+    // Auto-generate GCS folder path for preview
     const folderPath = useMemo(() => {
         if (!hearingDate || !committee || !billIds || !title) {
             return '';

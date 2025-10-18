@@ -5,6 +5,13 @@ import EmptyState from '../components/hearings/EmptyState.tsx';
 import ErrorDisplay from '../components/hearings/ErrorDisplay.tsx';
 import type { TranscriptListItem, TranscriptionRequest } from '../types/hearings.ts';
 
+/**
+ * Hearings Page
+ * 
+ * Main page for viewing and managing hearing transcripts.
+ * Displays list of transcripts in a tree view and provides
+ * form for creating new transcriptions.
+ */
 const Hearings = () => {
     const [transcripts, setTranscripts] = useState<TranscriptListItem[]>([]);
     const [loading, setLoading] = useState(true);

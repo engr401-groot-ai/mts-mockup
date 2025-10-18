@@ -2,11 +2,13 @@ import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, ChevronDown, FileText, Folder, FolderOpen } from 'lucide-react';
 import type { TranscriptListItem } from '../../types/hearings';
+import { formatDateShort, formatDuration } from '../../lib/formatUtils';
 
 interface TranscriptTreeViewProps {
     transcripts: TranscriptListItem[];
 }
 
+// Tree node structure for hierarchical organization
 interface TreeNode {
     type: 'billType' | 'committee' | 'bill' | 'transcript';
     id: string;
@@ -15,6 +17,14 @@ interface TreeNode {
     transcript?: TranscriptListItem;
 }
 
+/**
+ * TranscriptTreeView Component
+ * 
+ * Displays transcripts in a hierarchical tree structure organized by:
+ * Year → Bill Type (HB/SB) → Committee → Bill → Individual Transcripts
+ * 
+ * Provides expand/collapse functionality for easy navigation.
+ */
 const TranscriptTreeView: React.FC<TranscriptTreeViewProps> = ({ transcripts }) => {
     const [selectedYear, setSelectedYear] = useState<string>('');
     const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
@@ -144,24 +154,6 @@ const TranscriptTreeView: React.FC<TranscriptTreeViewProps> = ({ transcripts }) 
         }
     };
 
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric' 
-        });
-    };
-
-    const formatDuration = (seconds: number) => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        if (hours > 0) {
-            return `${hours}h ${minutes}m`;
-        }
-        return `${minutes}m`;
-    };
-
     const renderNode = (node: TreeNode, depth: number = 0): React.ReactNode => {
         const isExpanded = expandedNodes.has(node.id);
         const hasChildren = node.children && node.children.length > 0;
@@ -180,7 +172,7 @@ const TranscriptTreeView: React.FC<TranscriptTreeViewProps> = ({ transcripts }) 
                                 {node.transcript.title}
                             </div>
                             <div className="text-xs text-gray-500 flex items-center gap-3 mt-1">
-                                <span>{formatDate(node.transcript.date)}</span>
+                                <span>{formatDateShort(node.transcript.date)}</span>
                                 <span>•</span>
                                 <span>{formatDuration(node.transcript.duration)}</span>
                                 {node.transcript.room && (
