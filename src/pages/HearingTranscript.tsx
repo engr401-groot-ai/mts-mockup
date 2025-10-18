@@ -190,7 +190,7 @@ const HearingTranscript = () => {
                     
                     {/* Placeholder for new component */}
                     <div className="bg-white rounded-lg shadow p-4 h-[400px]">
-                        <p className="text-gray-500 text-center">TODO: Read Only Terms Drawer</p>
+                        <p className="text-gray-500 text-center">TODO: Read Only Terms Drawer && Summary</p>
                     </div>
                 </div>
 
