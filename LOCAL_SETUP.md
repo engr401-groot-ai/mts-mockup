@@ -128,7 +128,7 @@ You'll need access to the **Google Cloud service account JSON key file** for the
    - Visit Google Cloud Console: [https://console.cloud.google.com/](https://console.cloud.google.com/)
    - Log in and select the **'ITS-GRO'** project from the project dropdown
    - Navigate to **IAM & Admin** → **Service Accounts** (from the side menu)
-   - Find the service account: `groot-ai@its-gro.iam.gserviceaccount.com`
+   - Find the service account
    - Click on the service account, then go to the **Keys** tab
    - Click **Add Key** → **Create new key** → Select **JSON**
    - The key file will download automatically
