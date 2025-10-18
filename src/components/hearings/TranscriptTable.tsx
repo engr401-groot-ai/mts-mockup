@@ -1,30 +1,24 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-
-interface Transcript {
-    filename: string;
-    hearing_id: string;
-    size: number;
-    created: string | null;
-    gcs_path: string;
-}
+import type { TranscriptListItem } from '../../types/hearings';
 
 interface TranscriptTableProps {
-    transcripts: Transcript[];
+    transcripts: TranscriptListItem[];
 }
 
 const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
-    const formatDate = (dateString: string | null) => {
-        if (!dateString) return 'Unknown';
+    const formatDate = (dateString: string) => {
         const date = new Date(dateString);
         return date.toLocaleString();
     };
 
-    const formatSize = (bytes: number) => {
-        const kb = bytes / 1024;
-        if (kb < 1024) return `${kb.toFixed(2)} KB`;
-        const mb = kb / 1024;
-        return `${mb.toFixed(2)} MB`;
+    const formatDuration = (seconds: number) => {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+        }
+        return `${minutes}m`;
     };
 
     if (transcripts.length === 0) {
@@ -36,27 +30,35 @@ const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
             <table className="w-full">
                 <thead className="bg-gray-100 border-b">
                     <tr>
-                        <th className="px-4 py-3 text-left">Hearing ID</th>
-                        <th className="px-4 py-3 text-left">Created</th>
-                        <th className="px-4 py-3 text-left">Size</th>
+                        <th className="px-4 py-3 text-left">Title</th>
+                        <th className="px-4 py-3 text-left">Committee</th>
+                        <th className="px-4 py-3 text-left">Bill</th>
+                        <th className="px-4 py-3 text-left">Date</th>
+                        <th className="px-4 py-3 text-left">Duration</th>
                         <th className="px-4 py-3 text-left">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {transcripts.map((transcript, idx) => (
                         <tr key={idx} className="border-b hover:bg-gray-50">
-                            <td className="px-4 py-3 font-mono text-sm">
-                                {transcript.hearing_id}
+                            <td className="px-4 py-3 text-sm">
+                                {transcript.title}
                             </td>
                             <td className="px-4 py-3 text-sm">
-                                {formatDate(transcript.created)}
+                                {transcript.committee}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-mono">
+                                {transcript.bill_name}
                             </td>
                             <td className="px-4 py-3 text-sm">
-                                {formatSize(transcript.size)}
+                                {formatDate(transcript.date)}
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                                {formatDuration(transcript.duration)}
                             </td>
                             <td className="px-4 py-3">
                                 <Link
-                                    to={`/hearing/${transcript.hearing_id}`}
+                                    to={`/hearing/${transcript.year}/${transcript.committee}/${transcript.bill_name}/${transcript.video_title}`}
                                     className="text-blue-600 hover:underline text-sm"
                                 >
                                     View Transcript

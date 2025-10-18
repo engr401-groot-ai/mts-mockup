@@ -4,17 +4,10 @@ import TranscriptForm from '../components/hearings/TranscriptForm.tsx';
 import TranscriptTable from '../components/hearings/TranscriptTable.tsx';
 import EmptyState from '../components/hearings/EmptyState.tsx';
 import ErrorDisplay from '../components/hearings/ErrorDisplay.tsx';
-
-interface Transcript {
-    filename: string;
-    hearing_id: string;
-    size: number;
-    created: string | null;
-    gcs_path: string;
-}
+import type { TranscriptListItem, TranscriptionRequest } from '../types/hearings.ts';
 
 const Hearings = () => {
-    const [transcripts, setTranscripts] = useState<Transcript[]>([]);
+    const [transcripts, setTranscripts] = useState<TranscriptListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showAddForm, setShowAddForm] = useState(false);
@@ -44,23 +37,28 @@ const Hearings = () => {
         }
     };
 
-    const handleAddTranscript = async (youtubeUrl: string, hearingId: string) => {
-        const res = await fetch('http://localhost:3001/api/transcribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                youtubeUrl,
-                hearingId: hearingId || undefined
-            }),
-        });
+    const handleAddTranscript = async (data: TranscriptionRequest) => {
+        try {
+            const res = await fetch('http://localhost:3001/api/transcribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
 
-        if (!res.ok) {
-            throw new Error(`HTTP error! status: ${res.status}`);
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.details || errorData.error || `HTTP error! status: ${res.status}`);
+            }
+
+            await res.json();
+
+            setShowAddForm(false);
+            await fetchTranscripts();
+            alert('Transcript created successfully!');
+        } catch (error) {
+            console.error('Transcription failed:', error);
+            throw error;
         }
-
-        setShowAddForm(false);
-        await fetchTranscripts();
-        alert('Transcript created successfully!');
     };
 
     if (loading) {
