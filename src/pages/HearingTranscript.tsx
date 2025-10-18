@@ -157,9 +157,9 @@ const HearingTranscript = () => {
             />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                {/* Left Column */}
-                <div className="space-y-4">
-                    <div className="bg-white rounded-lg shadow p-4">
+                {/* Left Column - Video + Terms */}
+                <div className="flex flex-col gap-4 h-[800px]">
+                    <div className="bg-white rounded-lg shadow p-4 h-[400px]">
                         {transcript?.youtube_url ? (
                             <VideoPlayer 
                                 ref={videoPlayerRef}
@@ -167,24 +167,23 @@ const HearingTranscript = () => {
                                 onProgress={handleProgress}
                             />
                         ) : (
-                            <div className="bg-gray-100 h-64 flex items-center justify-center rounded">
+                            <div className="bg-gray-100 h-full flex items-center justify-center rounded">
                                 <p className="text-gray-500">No video available</p>
                             </div>
                         )}
                     </div>
                     
                     {/* Placeholder for new component */}
-                    <div className="bg-white rounded-lg shadow p-4">
-                        <p className="text-gray-500 text-center">PLACEHOLDER FOR TERMS</p>
+                    <div className="bg-white rounded-lg shadow p-4 h-[400px]">
+                        <p className="text-gray-500 text-center">TODO: Read Only Terms Drawer</p>
                     </div>
                 </div>
 
-                {/* Right Column */}
-                <div className="space-y-4">
+                {/* Right Column - Search + Transcript */}
+                <div className="flex flex-col h-[800px]">
                     <TranscriptSearchBar 
                         searchTerm={searchTerm}
                         onSearchChange={handleSearchChange}
-                        onDownload={downloadTranscript}
                         searchResults={searchResults.total > 0 ? {
                             total: searchResults.total,
                             current: searchResults.current
@@ -193,11 +192,7 @@ const HearingTranscript = () => {
                         onPrevResult={handlePrevResult}
                     />
                     
-                    <div className="bg-white rounded-lg shadow">
-                        <div className="p-4 border-b">
-                            <h3 className="text-lg font-semibold">Transcript Details</h3>
-                        </div>
-                        
+                    <div className="bg-white rounded-lg shadow flex-1 flex flex-col overflow-hidden">
                         {transcript?.segments ? (
                             <TranscriptDisplay 
                                 segments={transcript.segments}
@@ -206,6 +201,7 @@ const HearingTranscript = () => {
                                 searchTerm={searchTerm}
                                 currentSearchIndex={searchResults.current - 1}
                                 onSearchResultsChange={handleSearchResultsChange}
+                                onDownload={downloadTranscript}
                             />
                         ) : (
                             <div className="p-4">
