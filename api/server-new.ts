@@ -53,15 +53,15 @@ function formatTranscriptResponse(data: PythonAPIResponse): ClientResponse {
 
 // Post endpoint to handle transcribing new videos
 app.post('/api/transcribe', async (req: Request, res: Response) => {
-    const { youtubeUrl, year, topic, billName, videoTitle, hearingDate } = req.body;
+    const { youtubeUrl, year, committee, billName, videoTitle, hearingDate, room, ampm } = req.body;
 
     console.log('Received transcription request for URL:', youtubeUrl);
 
     // Validate required fields
-    if (!youtubeUrl || !year || !topic || !billName || !videoTitle) {
+    if (!youtubeUrl || !year || !committee || !billName || !videoTitle) {
         return res.status(400).json({ 
             error: 'Missing required fields',
-            required: ['youtubeUrl', 'year', 'topic', 'billName', 'videoTitle', 'hearingDate']
+            required: ['youtubeUrl', 'year', 'committee', 'billName', 'videoTitle', 'hearingDate']
         });
     }
 
@@ -71,10 +71,12 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
         const requestPayload: TranscriptionRequest = {
             youtube_url: youtubeUrl,
             year: year,
-            topic: topic,
+            committee: committee,
             bill_name: billName,
             video_title: videoTitle,
-            hearing_date: hearingDate || new Date().toISOString().split('T')[0]
+            hearing_date: hearingDate || new Date().toISOString().split('T')[0],
+            room: room,
+            ampm: ampm
         };
 
         const response = await axios.post<PythonAPIResponse>(
@@ -119,9 +121,9 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
 
 
 // Get endpoint to retrieve a specific transcripts
-app.get('/api/transcript/:year/:topic/:billName/:videoTitle', async (req: Request, res: Response) => {
-    const { year, topic, billName, videoTitle } = req.params;
-    const folderPath = `${year}/${topic}/${billName}/${videoTitle}`;
+app.get('/api/transcript/:year/:committee/:billName/:videoTitle', async (req: Request, res: Response) => {
+    const { year, committee, billName, videoTitle } = req.params;
+    const folderPath = `${year}/${committee}/${billName}/${videoTitle}`;
 
     console.log('Fetching transcript from folder:', folderPath);
 
@@ -158,9 +160,11 @@ app.get('/api/transcripts', async (req: Request, res: Response) => {
       duration_minutes: Math.round(t.duration / 60),
       youtube_url: t.youtube_url,
       year: t.year,
-      topic: t.topic,
+      committee: t.committee,
       bill_name: t.bill_name,
       video_title: t.video_title,
+      room: t.room,
+      ampm: t.ampm,
       folder_path: t.folder_path,
       created_at: t.created_at
     }));

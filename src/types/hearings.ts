@@ -20,9 +20,11 @@ export interface Metadata {
     duration: number;
     youtube_url: string;
     year: string;
-    topic: string;
+    committee: string;
     bill_name: string;
     video_title: string;
+    room: string;
+    ampm: string;
     folder_path: string;
     created_at: string;
 }
@@ -57,10 +59,12 @@ export interface PythonAPIResponse {
 export interface TranscriptionRequest {
     youtube_url: string;
     year: string;
-    topic: string;
+    committee: string;
     bill_name: string;
     video_title: string;
     hearing_date: string;
+    room?: string;
+    ampm?: string;
 }
 
 export interface FormattedWord {
@@ -100,9 +104,11 @@ export interface TranscriptListItem {
     duration_minutes: number;
     youtube_url: string;
     year: string;
-    topic: string;
+    committee: string;
     bill_name: string;
     video_title: string;
+    room: string;
+    ampm: string;
     folder_path: string;
     created_at: string;
 }
