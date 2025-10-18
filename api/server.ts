@@ -6,218 +6,172 @@ import type { Request, Response } from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import type { 
+    PythonAPIResponse, 
+    TranscriptionRequest, 
+    ClientResponse, 
+    Metadata,
+    TranscriptListItem 
+} from '../src/types/hearings';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3001;
 const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:5001';
+const REQUEST_TIMEOUT = 3600000;
 
 app.use(cors());
 app.use(express.json());
 
-interface PythonTranscriptResponse {
-  transcript: {
-    id: string;
-    youtube_url: string;
-    title: string;
-    text: string;
-    language: string;
-    duration: number;
-    processing_time: number;
-    model: string;
-    segments: Array<{
-      id: number;
-      start: number;
-      end: number;
-      text: string;
-      words: Array<{
-        word: string;
-        start: number;
-        end: number;
-        probability: number;
-      }>;
-    }>;
-    created_at: string;
-    total_segments: number;
-  };
-  gcs_path: string;
-  cached: boolean;
-  stats?: {
-    duration_minutes: number;
-    processing_time_minutes: number;
-    segments: number;
-    model: string;
-  };
+function formatTranscriptResponse(data: PythonAPIResponse): ClientResponse {
+    return {
+        transcription: data.transcript.segments.map(seg => ({
+            transcript: seg.text,
+            words: seg.words.map(w => ({
+                word: w.word,
+                startTime: w.start,
+                endTime: w.end
+            }))
+        })),
+        fullText: data.transcript.text,
+        youtube_url: data.metadata.youtube_url,
+        segments: data.transcript.segments,
+        folderPath: data.folder_path,
+        metadataPath: data.metadata_path,
+        transcriptPath: data.transcript_path,
+        cached: data.cached,
+        metadata: data.metadata,
+        transcriptInfo: {
+            model: data.transcript.model,
+            processing_time: data.transcript.processing_time,
+            total_segments: data.transcript.total_segments,
+            language: data.transcript.language
+        }
+    };
 }
 
-/**
- * POST /api/transcribe
- * Forward request to Python API for transcription
- */
+// Post endpoint to handle transcribing new videos
 app.post('/api/transcribe', async (req: Request, res: Response) => {
-  const { youtubeUrl, hearingId } = req.body;
-  
-  console.log('\n='.repeat(60));
-  console.log('Received transcription request');
-  console.log('YouTube URL:', youtubeUrl);
-  console.log('Hearing ID:', hearingId || 'auto-generated');
-  console.log('='.repeat(60) + '\n');
-  
-  if (!youtubeUrl) {
-    return res.status(400).json({ error: 'YouTube URL is required' });
-  }
+    const { youtube_url, year, committee, bill_name, bill_ids, video_title, hearing_date, room, ampm } = req.body;
 
-  try {
-    console.log('Forwarding to Python API:', PYTHON_API_URL);
-    
-    // Call Python API
-    const response = await axios.post<PythonTranscriptResponse>(
-      `${PYTHON_API_URL}/transcribe`,
-      {
-        youtube_url: youtubeUrl,
-        hearing_id: hearingId
-      },
-      {
-        timeout: 3600000, // 1 hour timeout for very long videos
-        onDownloadProgress: (progressEvent) => {
-          // You could implement WebSocket to send progress to client here
-          console.log('Receiving data from Python API...');
+    // Validate required fields
+    if (!youtube_url || !year || !committee || !bill_name || !video_title) {
+        console.log('Validation failed:', { youtube_url: !!youtube_url, year: !!year, committee: !!committee, bill_name: !!bill_name, video_title: !!video_title });
+        
+        return res.status(400).json({ 
+            error: 'Missing required fields',
+            required: ['youtube_url', 'year', 'committee', 'bill_name', 'video_title', 'hearing_date'],
+            received: { youtube_url, year, committee, bill_name, video_title, hearing_date }
+        });
+    }
+
+    try {
+        console.log('Transcribing:', { year, committee, bill_name, video_title });
+
+        const requestPayload: TranscriptionRequest = {
+            youtube_url: youtube_url,
+            year: year,
+            committee: committee,
+            bill_name: bill_name,
+            bill_ids: bill_ids,
+            video_title: video_title,
+            hearing_date: hearing_date || new Date().toISOString().split('T')[0],
+            room: room,
+            ampm: ampm
+        };
+
+        const response = await axios.post<PythonAPIResponse>(
+            `${PYTHON_API_URL}/transcribe`, 
+            requestPayload,
+            { timeout: REQUEST_TIMEOUT }
+        );
+
+        console.log('Transcription complete:', response.data.folder_path, 
+            response.data.stats ? `(${response.data.stats.duration_minutes.toFixed(1)}min, ${response.data.stats.segments} segments)` : ''
+        );
+
+        const formattedResponse = formatTranscriptResponse(response.data);
+        
+        res.json(formattedResponse);
+    } catch (error) {
+        console.error('Error during transcription:', error);
+
+        if (axios.isAxiosError(error)) {
+            console.error('Python API Error:', error.response?.data || error.message);
+            res.status(error.response?.status || 500).json({
+                error: 'Transcription failed',
+                details: error.response?.data?.details || error.message
+            });
+        } else {
+            console.error('Unexpected error:', error);
+            res.status(500).json({
+                error: 'Failed to transcribe video',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            });
         }
-      }
-    );
-    
-    console.log('\n='.repeat(60));
-    console.log('Transcription completed!');
-    console.log('Cached:', response.data.cached);
-    console.log('GCS Path:', response.data.gcs_path);
-    if (response.data.stats) {
-      console.log('Duration:', response.data.stats.duration_minutes.toFixed(2), 'minutes');
-      console.log('Processing Time:', response.data.stats.processing_time_minutes.toFixed(2), 'minutes');
-      console.log('Segments:', response.data.stats.segments);
     }
-    console.log('='.repeat(60) + '\n');
-    
-    // Format response to match your existing frontend expectations
-    const formattedResponse = {
-      transcription: response.data.transcript.segments.map(seg => ({
-        transcript: seg.text,
-        words: seg.words.map(w => ({
-          word: w.word,
-          startTime: w.start,
-          endTime: w.end
-        }))
-      })),
-      fullText: response.data.transcript.text,
-      youtube_url: response.data.transcript.youtube_url,
-      segments: response.data.transcript.segments,
-      gcsPath: response.data.gcs_path,
-      cached: response.data.cached,
-      metadata: {
-        id: response.data.transcript.id,
-        title: response.data.transcript.title,
-        duration: response.data.transcript.duration,
-        processingTime: response.data.transcript.processing_time,
-        model: response.data.transcript.model,
-        totalSegments: response.data.transcript.total_segments
-      }
-    };
-    
-    res.json(formattedResponse);
-    
-  } catch (error) {
-    console.error('\n' + '='.repeat(60));
-    console.error('ERROR during transcription');
-    console.error('='.repeat(60));
-    
-    if (axios.isAxiosError(error)) {
-      console.error('Python API Error:', error.response?.data || error.message);
-      res.status(error.response?.status || 500).json({
-        error: 'Transcription failed',
-        details: error.response?.data?.details || error.message
-      });
-    } else {
-      console.error('Unexpected error:', error);
-      res.status(500).json({
-        error: 'Failed to transcribe video',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
 });
 
-/**
- * GET /api/transcript/:hearingId
- * Get existing transcript from Python API/GCS
- */
-app.get('/api/transcript/:hearingId', async (req: Request, res: Response) => {
-  const { hearingId } = req.params;
-  
-  console.log('Fetching transcript:', hearingId);
-  
-  try {
-    const response = await axios.get(
-      `${PYTHON_API_URL}/transcript/${hearingId}`
-    );
 
-    console.log('YouTube URL from Python:', response.data.transcript?.youtube_url);
+// Get endpoint to retrieve a specific transcripts
+app.get('/api/transcript/:year/:committee/:billName/:videoTitle', async (req: Request, res: Response) => {
+    const { year, committee, billName, videoTitle } = req.params;
+    const folderPath = `${year}/${committee}/${billName}/${videoTitle}`;
 
-    const t = response.data.transcript;
-    console.log(`📄 ${t.id} | "${t.title}" | ${t.youtube_url} | ${Math.round(t.duration)}s | ${t.text?.length || 0} chars`);
-    
-    // Format to match frontend expectations
-    const formattedResponse = {
-      transcription: response.data.transcript.segments.map((seg: any) => ({
-        transcript: seg.text,
-        words: seg.words.map((w: any) => ({
-          word: w.word,
-          startTime: w.start,
-          endTime: w.end
-        }))
-      })),
-      fullText: response.data.transcript.text,
-      youtube_url: response.data.transcript.youtube_url,
-      segments: response.data.transcript.segments,
-      gcsPath: response.data.gcs_path,
-      metadata: {
-        id: response.data.transcript.id,
-        title: response.data.transcript.title,
-        duration: response.data.transcript.duration,
-        model: response.data.transcript.model
-      }
-    };
+    try {
+        const response = await axios.get<PythonAPIResponse>(
+            `${PYTHON_API_URL}/transcript/${encodeURIComponent(folderPath)}`
+        );
 
-    console.log('Formatted response youtube_url:', formattedResponse.youtube_url);
-    
-    res.json(formattedResponse);
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
-      res.status(404).json({ error: 'Transcript not found' });
-    } else {
-      console.error('Error fetching transcript:', error);
-      res.status(500).json({ error: 'Failed to fetch transcript' });
+        console.log('Retrieved:', response.data.metadata?.title);
+
+        const formattedResponse = formatTranscriptResponse(response.data);
+
+        res.json(formattedResponse);
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+            res.status(404).json({ error: 'Transcript not found' });
+        } else {
+            console.error('Error fetching transcript:', error);
+            res.status(500).json({ error: 'Failed to fetch transcript' });
+        }
     }
-  }
 });
 
-/**
- * GET /api/transcripts
- * List all transcripts
- */
+// Get endpoint to list all transcripts
 app.get('/api/transcripts', async (req: Request, res: Response) => {
   try {
     const response = await axios.get(`${PYTHON_API_URL}/list-transcripts`);
-    res.json(response.data);
+    
+    const formattedTranscripts: TranscriptListItem[] = response.data.transcripts.map((t: Metadata) => ({
+      hearing_id: t.hearing_id,
+      title: t.title,
+      date: t.date,
+      duration: t.duration,
+      duration_minutes: Math.round(t.duration / 60),
+      youtube_url: t.youtube_url,
+      year: t.year,
+      committee: t.committee,
+      bill_name: t.bill_name,
+      video_title: t.video_title,
+      room: t.room,
+      ampm: t.ampm,
+      folder_path: t.folder_path,
+      created_at: t.created_at
+    }));
+    
+    res.json({
+      transcripts: formattedTranscripts,
+      count: response.data.count
+    });
   } catch (error) {
     console.error('Error listing transcripts:', error);
     res.status(500).json({ error: 'Failed to list transcripts' });
   }
 });
 
-/**
- * GET /health
- * Check health of both Node.js and Python services
- */
+// Get endpoint for health check
 app.get('/health', async (req: Request, res: Response) => {
   try {
     const pythonHealth = await axios.get(`${PYTHON_API_URL}/health`, {
@@ -247,23 +201,24 @@ app.get('/health', async (req: Request, res: Response) => {
   }
 });
 
+// Start the server
 app.listen(PORT, () => {
   console.log('\n' + '='.repeat(60));
-  console.log('Node.js Server Started');
+  console.log('Node.js+Express Server Started');
   console.log('='.repeat(60));
   console.log('Port:', PORT);
   console.log('Python API:', PYTHON_API_URL);
   console.log('='.repeat(60) + '\n');
   
-  // Test Python API connection
   axios.get(`${PYTHON_API_URL}/health`)
     .then(response => {
-      console.log('✅ Python API is reachable');
+      console.log('   Python API is reachable');
       console.log('   Model:', response.data.model);
       console.log('   Bucket:', response.data.gcs_bucket);
+      console.log('   Chunk Length:', response.data.chunk_length_minutes, 'minutes');
     })
-    .catch(error => {
-      console.log('❌ WARNING: Python API is not reachable');
-      console.log('   Make sure to run: python3 api/transcription_api.py');
+    .catch(() => {
+      console.log('   WARNING: Python API is not reachable');
+      console.log('   Make sure to run: python3 api/whisper_to_gcs.py');
     });
 });
