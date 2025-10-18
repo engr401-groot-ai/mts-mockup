@@ -22,7 +22,6 @@ You must have the following system dependencies installed **and verified** befor
 
 - **Install:** [Download here](https://nodejs.org/)
 - **Verify installation:**
-   **Terminal command:**
    ```bash
    node --version
    ```
@@ -31,7 +30,6 @@ You must have the following system dependencies installed **and verified** befor
 
 - **Comes with Node.js**
 - **Verify installation:**
-   **Terminal command:**
    ```bash
    npm --version
    ```
@@ -40,7 +38,6 @@ You must have the following system dependencies installed **and verified** befor
 
 - **Install:** [Download here](https://www.python.org/downloads/)
 - **Verify installation:**
-   **Terminal command:**
    ```bash
    python3 --version
    ```
@@ -49,7 +46,6 @@ You must have the following system dependencies installed **and verified** befor
 
 - **Install:** [Download here](https://git-scm.com/downloads/)
 - **Verify installation:**
-   **Terminal command:**
    ```bash
    git --version
    ```
@@ -61,20 +57,17 @@ FFmpeg is required for audio/video processing in the transcription service.
 #### Install FFmpeg
 
 **macOS (using Homebrew):**
-**Terminal command:**
 ```bash
 brew install ffmpeg
 ```
 
 **Ubuntu/Debian:**
-**Terminal command:**
 ```bash
 sudo apt update
 sudo apt install ffmpeg
 ```
 
 **Windows (using Chocolatey):**
-**Terminal command:**
 ```bash
 choco install ffmpeg
 ```
@@ -82,7 +75,6 @@ choco install ffmpeg
 Or download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
 **Verify FFmpeg installation:**
-**Terminal command:**
 ```bash
 ffmpeg -version
 ```
@@ -96,7 +88,6 @@ You can clone the repository using either the command line **or** GitHub Desktop
 
 ### Option 1: Command Line
 
-**Terminal command:**
 ```bash
 # Clone the repository
 git clone https://github.com/engr401-groot-ai/mts-mockup.git
@@ -165,7 +156,6 @@ Navigate to the project directory if you haven't already
 
 Then install all Node.js dependencies:
 
-**Terminal command:**
 ```bash
 npm install
 ```
@@ -181,7 +171,6 @@ This installs all dependencies including:
 
 Create a `.env` file in the project root:
 
-**Terminal command:**
 ```bash
 touch .env
 ```
@@ -209,21 +198,15 @@ WHISPER_MODEL_NAME=large-v3-turbo
 
 ### 1. Create Python Virtual Environment
 
-**Terminal command:**
 ```bash
 # Create virtual environment
 python3 -m venv .venv
-```
 
-**Terminal command:**
-```bash
-# Activate virtual environment (macOS/Linux)
+# Activate virtual environment
+# On macOS/Linux:
 source .venv/bin/activate
-```
 
-**Terminal command:**
-```bash
-# Activate virtual environment (Windows)
+# On Windows:
 .venv\Scripts\activate
 ```
 
@@ -231,13 +214,9 @@ You should see `(.venv)` in your terminal prompt.
 
 ### 2. Install Python Dependencies
 
-**Terminal command:**
 ```bash
 pip install --upgrade pip
-```
 
-**Terminal command:**
-```bash
 # Install required packages
 pip install flask flask-cors openai-whisper google-cloud-storage yt-dlp
 ```
@@ -251,14 +230,10 @@ pip install flask flask-cors openai-whisper google-cloud-storage yt-dlp
 
 ### 3. Verify Python Setup
 
-**Terminal command:**
 ```bash
 # Check Python version
 python --version
-```
 
-**Terminal command:**
-```bash
 # Verify packages installed
 pip list | grep -E "(flask|whisper|google-cloud-storage|yt-dlp)"
 ```
@@ -271,7 +246,6 @@ The application has three components that need to run simultaneously:
 
 ### Terminal 1: Frontend Development Server
 
-**Terminal command:**
 ```bash
 npm run dev
 ```
@@ -288,7 +262,6 @@ VITE v6.x.x  ready in XXX ms
 
 ### Terminal 2: Node.js Backend API
 
-**Terminal command:**
 ```bash
 npx tsx api/server.ts
 ```
@@ -305,20 +278,12 @@ Python API: http://localhost:5001
 
 Make sure your virtual environment is activated first!
 
-**Terminal command:**
 ```bash
-# Activate if not already active (macOS/Linux)
-source .venv/bin/activate
-```
+# Activate if not already active
+source .venv/bin/activate  # macOS/Linux
+# or
+.venv\Scripts\activate     # Windows
 
-**Terminal command:**
-```bash
-# Activate if not already active (Windows)
-.venv\Scripts\activate
-```
-
-**Terminal command:**
-```bash
 # Run the Flask API
 python api/hearing-transcription.py
 ```
@@ -346,13 +311,11 @@ You should see the MTS interface.
 ### 2. Check API Health
 
 **Node.js API:**
-**Terminal command:**
 ```bash
 curl http://localhost:3001/health
 ```
 
 **Python API:**
-**Terminal command:**
 ```bash
 curl http://localhost:5001/health
 ```
