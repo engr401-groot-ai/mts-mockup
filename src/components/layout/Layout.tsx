@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
-import MtsNavbar from '../MtsNavbar';
+import MtsNavbar from './MtsNavbar';
 
 /**
  * Main layout component that wraps all pages with consistent navigation

@@ -152,33 +152,12 @@ const HearingTranscript = () => {
             <PageHeader 
                 backLink="/hearings"
                 backLabel="Back to Hearings List"
-                title="Hearing Transcript"
+                title="Transcript Analysis"
                 subtitle={`${year} / ${committee} / ${billName} / ${videoTitle}`}
-            />
-
-            {transcript?.metadata && (
-                <MetadataCard metadata={{
-                    id: transcript.metadata.hearing_id,
-                    title: transcript.metadata.title,
-                    duration: transcript.metadata.duration,
-                    model: transcript.transcriptInfo.model,
-                    totalSegments: transcript.transcriptInfo.total_segments
-                }} />
-            )}
-
-             <TranscriptSearchBar 
-                searchTerm={searchTerm}
-                onSearchChange={handleSearchChange}
-                onDownload={downloadTranscript}
-                searchResults={searchResults.total > 0 ? {
-                    total: searchResults.total,
-                    current: searchResults.current
-                } : undefined}
-                onNextResult={handleNextResult}
-                onPrevResult={handlePrevResult}
             />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                {/* Left Column */}
                 <div className="space-y-4">
                     <div className="bg-white rounded-lg shadow p-4">
                         {transcript?.youtube_url ? (
@@ -193,9 +172,27 @@ const HearingTranscript = () => {
                             </div>
                         )}
                     </div>
+                    
+                    {/* Placeholder for new component */}
+                    <div className="bg-white rounded-lg shadow p-4">
+                        <p className="text-gray-500 text-center">PLACEHOLDER FOR TERMS</p>
+                    </div>
                 </div>
 
+                {/* Right Column */}
                 <div className="space-y-4">
+                    <TranscriptSearchBar 
+                        searchTerm={searchTerm}
+                        onSearchChange={handleSearchChange}
+                        onDownload={downloadTranscript}
+                        searchResults={searchResults.total > 0 ? {
+                            total: searchResults.total,
+                            current: searchResults.current
+                        } : undefined}
+                        onNextResult={handleNextResult}
+                        onPrevResult={handlePrevResult}
+                    />
+                    
                     <div className="bg-white rounded-lg shadow">
                         <div className="p-4 border-b">
                             <h3 className="text-lg font-semibold">Transcript Details</h3>
@@ -219,10 +216,13 @@ const HearingTranscript = () => {
                 </div>
             </div>
 
-            {/* Stats Footer */}
-            {transcript?.fullText && (
-                <div className="mt-6 text-center text-sm text-gray-500">
-                    Total characters: {transcript.fullText.length.toLocaleString()}
+            {/* Metadata Card Footer*/}
+            {transcript?.metadata && (
+                <div className="mt-6">
+                    <MetadataCard 
+                        metadata={transcript.metadata} 
+                        fullTextLength={transcript.fullText?.length}
+                    />
                 </div>
             )}
         </div>
