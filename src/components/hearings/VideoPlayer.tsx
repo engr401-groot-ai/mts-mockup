@@ -1,4 +1,5 @@
 import React, { useRef, forwardRef, useImperativeHandle } from 'react';
+import { getYouTubeVideoId, getYouTubeEmbedUrl } from '../../lib/youtubeUtils';
 
 interface VideoPlayerProps {
     url: string;
@@ -9,27 +10,25 @@ export interface VideoPlayerRef {
     seekTo: (seconds: number) => void;
 }
 
+/**
+ * VideoPlayer Component
+ * 
+ * Embeds YouTube videos with seek functionality for transcript timestamp navigation.
+ * Uses YouTube's embedded player API to control playback.
+ * 
+ * Note: onProgress callback is not currently implemented with YouTube iframe API.
+ * For full progress tracking, consider using react-player or YouTube iframe API.
+ */
 const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
-    ({ url, onProgress }, ref) => {
+    ({ url }, ref) => {
         const iframeRef = useRef<HTMLIFrameElement>(null);
 
-        const getYoutubeVideoId = (url: string) => {
-            try {
-                const match = url.match(
-                    /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|live\/|shorts\/))([\w-]{11})/
-                );
-                return match ? match[1] : null;
-            } catch {
-                return null;
-            }
-        };
-
-        const videoId = getYoutubeVideoId(url);
+        const videoId = getYouTubeVideoId(url);
 
         useImperativeHandle(ref, () => ({
             seekTo: (seconds: number) => {
                 if (iframeRef.current && videoId) {
-                    const newSrc = `https://www.youtube.com/embed/${videoId}?start=${Math.floor(seconds)}&autoplay=1`;
+                    const newSrc = getYouTubeEmbedUrl(videoId, seconds, true);
                     iframeRef.current.src = newSrc;
                 }
             },

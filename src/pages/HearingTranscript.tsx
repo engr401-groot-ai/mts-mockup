@@ -7,14 +7,15 @@ import MetadataCard from '../components/hearings/MetadataCard.tsx';
 import TranscriptSearchBar from '../components/hearings/TranscriptSearchBar.tsx';
 import TranscriptDisplay from '../components/hearings/TranscriptDisplay.tsx';
 import VideoPlayer, { VideoPlayerRef } from '../components/hearings/VideoPlayer.tsx';
-import type { ClientResponse, Segment } from '../types/hearings.ts';
+import type { ClientResponse, SearchResults } from '../types/hearings.ts';
 
-interface SearchResults {
-    total: number;
-    current: number;
-    matches: Array<{ segmentId: number; matchIndex: number }>;
-}
-
+/**
+ * HearingTranscript Page
+ * 
+ * Displays a single hearing transcript with synchronized video playback,
+ * search functionality, and metadata information. Main analysis page for
+ * individual hearing recordings.
+ */
 const HearingTranscript = () => {
     const { year, committee, billName, videoTitle } = useParams<{ 
         year: string; 
@@ -65,16 +66,25 @@ const HearingTranscript = () => {
     };
 
     const downloadTranscript = () => {
-        if (!transcript?.fullText) return;
-        const blob = new Blob([transcript.fullText], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `transcript-${year}-${committee}-${billName}-${videoTitle}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        if (!transcript?.fullText) {
+            console.warn('No transcript text available for download');
+            return;
+        }
+        
+        try {
+            const blob = new Blob([transcript.fullText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transcript-${year}-${committee}-${billName}-${videoTitle}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to download transcript:', error);
+            alert('Failed to download transcript. Please try again.');
+        }
     };
 
     const handleProgress = (progress: { playedSeconds: number }) => {
@@ -90,6 +100,7 @@ const HearingTranscript = () => {
     const handleSearchResultsChange = useCallback((results: { total: number; matches: Array<{ segmentId: number; matchIndex: number }> }) => {
         setSearchResults(prev => ({
             ...results,
+            // Keep current index valid when search results change
             current: results.total > 0 ? Math.min(prev.current || 1, results.total) : 0
         }));
     }, []);
@@ -97,6 +108,7 @@ const HearingTranscript = () => {
     const handleNextResult = () => {
         setSearchResults(prev => ({
             ...prev,
+            // Wrap around to first result when at end
             current: prev.current < prev.total ? prev.current + 1 : 1
         }));
     };
@@ -104,6 +116,7 @@ const HearingTranscript = () => {
     const handlePrevResult = () => {
         setSearchResults(prev => ({
             ...prev,
+            // Wrap around to last result when at beginning
             current: prev.current > 1 ? prev.current - 1 : prev.total
         }));
     };
@@ -111,8 +124,10 @@ const HearingTranscript = () => {
     const handleSearchChange = (value: string) => {
         setSearchTerm(value);
         if (!value) {
+            // Reset search results when search is cleared
             setSearchResults({ total: 0, current: 0, matches: [] });
         } else {
+            // Reset to first result when new search term is entered
             setSearchResults(prev => ({ ...prev, current: 1 }));
         }
     };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Video, Clock, Calendar, FileText, Building2, MapPin, Sun, Moon } from 'lucide-react';
 import type { Metadata } from '../../types/hearings';
+import { formatDate, formatDuration } from '../../lib/formatUtils';
 
 interface MetadataCardProps {
     metadata: Metadata;
@@ -8,26 +9,6 @@ interface MetadataCardProps {
 }
 
 const MetadataCard: React.FC<MetadataCardProps> = ({ metadata, fullTextLength }) => {
-    const formatDuration = (seconds: number) => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        if (hours > 0) {
-            return `${hours}h ${minutes}m`;
-        }
-        return `${minutes}m`;
-    };
-
-    const formatDate = (dateString: string) => {
-        try {
-            return new Date(dateString).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            });
-        } catch {
-            return dateString;
-        }
-    };
 
     return (
         <div className="bg-white border rounded-lg p-6 mb-6 shadow-sm">

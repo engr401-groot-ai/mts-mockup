@@ -2,6 +2,8 @@
  * Utility functions for transcript form handling and validation
  */
 
+import { isValidYouTubeUrl as checkYouTubeUrl } from './youtubeUtils';
+
 export interface BillValidationResult {
     valid: boolean;
     normalized: string[];
@@ -102,7 +104,7 @@ export const sanitizeForPath = (input: string): string => {
  * Validates a YouTube URL
  */
 export const isValidYouTubeUrl = (url: string): boolean => {
-    return url.includes('youtube.com') || url.includes('youtu.be');
+    return checkYouTubeUrl(url);
 };
 
 /**

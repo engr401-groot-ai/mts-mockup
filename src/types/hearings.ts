@@ -1,3 +1,5 @@
+// Core data structures for transcription system
+
 export interface Word {
     word: string;
     start: number;
@@ -11,6 +13,14 @@ export interface Segment {
     end: number;
     text: string;
     words: Word[];
+}
+
+// UI-specific type for transcript display components
+export interface TranscriptSegment {
+    id: number;
+    start: number;
+    end: number;
+    text: string;
 }
 
 export interface Metadata {
@@ -113,4 +123,16 @@ export interface TranscriptListItem {
     ampm: string;
     folder_path: string;
     created_at: string;
+}
+
+// Search-related types
+export interface SearchMatch {
+    segmentId: number;
+    matchIndex: number;
+}
+
+export interface SearchResults {
+    total: number;
+    current: number;
+    matches: SearchMatch[];
 }

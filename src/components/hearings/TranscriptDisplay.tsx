@@ -1,12 +1,7 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import TranscriptDownload from './TranscriptDownload';
-
-interface TranscriptSegment {
-    id: number,
-    start: number,
-    end: number,
-    text: string,
-}
+import { formatTimestamp } from '../../lib/formatUtils';
+import type { TranscriptSegment, SearchMatch } from '../../types/hearings';
 
 interface TranscriptProps {
     segments: TranscriptSegment[];
@@ -14,9 +9,17 @@ interface TranscriptProps {
     currentTime?: number;
     searchTerm?: string;
     currentSearchIndex?: number;
-    onSearchResultsChange?: (results: { total: number; matches: Array<{ segmentId: number; matchIndex: number }> }) => void;
+    onSearchResultsChange?: (results: { total: number; matches: SearchMatch[] }) => void;
     onDownload?: () => void;
 }
+
+/**
+ * TranscriptDisplay Component
+ * 
+ * Displays hearing transcript with search functionality, video synchronization,
+ * and timestamp navigation. Supports real-time highlighting of current segment
+ * based on video playback position.
+ */
 
 const TranscriptDisplay: React.FC<TranscriptProps> = ({
     segments,
@@ -30,7 +33,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
     const containerRef = useRef<HTMLDivElement>(null);
     const [activeTab, setActiveTab] = useState<'fullText' | 'mentions'>('fullText');
 
-    // Calculate all search matches
+    // Calculate all search matches across all segments
     const searchMatches = useMemo(() => {
         if (!searchTerm || !segments) return [];
         
@@ -71,12 +74,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
         }
     }, [searchMatches, onSearchResultsChange]);
 
-    const formatTime = (seconds: number) => {
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = Math.floor(seconds % 60);
-        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-    };
-
+    // Highlight search term in text with proper styling for current match
     const highlightText = (text: string, segmentId: number): React.ReactNode => {
         if (!searchTerm) return text;
 
@@ -207,7 +205,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                                 onClick={() => onTimestampClick(segment.start)}
                                 className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm whitespace-nowrap font-medium min-w-[3rem] text-left"
                             >
-                                {formatTime(segment.start)}
+                                {formatTimestamp(segment.start)}
                             </button>
                             <p className="text-gray-800 leading-relaxed">
                                 {highlightText(segment.text, segment.id)}
