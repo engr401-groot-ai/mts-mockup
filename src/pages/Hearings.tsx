@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import MtsNavBar from '../components/MtsNavbar.tsx';
 import TranscriptForm from '../components/hearings/TranscriptForm.tsx';
-import TranscriptTable from '../components/hearings/TranscriptTable.tsx';
+import TranscriptTreeView from '../components/hearings/TranscriptTreeView.tsx';
 import EmptyState from '../components/hearings/EmptyState.tsx';
 import ErrorDisplay from '../components/hearings/ErrorDisplay.tsx';
 import type { TranscriptListItem, TranscriptionRequest } from '../types/hearings.ts';
@@ -63,7 +62,7 @@ const Hearings = () => {
 
     if (loading) {
         return (
-            <div className="p-8">
+            <div className="container">
                 <h1 className="text-2xl font-bold mb-4">Hearings & Transcripts</h1>
                 <p>Loading...</p>
             </div>
@@ -72,8 +71,7 @@ const Hearings = () => {
 
     if (error) {
         return (
-            <div className="p-8 max-w-6xl mx-auto">
-                <MtsNavBar />
+            <div className="container">
                 <div className="mb-6 flex justify-between items-center">
                     <h1 className="text-2xl font-bold">Hearings & Transcripts</h1>
                     <button
@@ -100,8 +98,7 @@ const Hearings = () => {
     }
 
     return (
-        <div className="p-8 max-w-6xl mx-auto">
-            <MtsNavBar />
+        <div className="container">
             <div className="mb-6 flex justify-between items-center">
                 <div>
                     <h1 className="text-2xl font-bold mb-2">Hearings & Transcripts</h1>
@@ -129,7 +126,7 @@ const Hearings = () => {
                     onAction={showAddForm ? undefined : () => setShowAddForm(true)}
                 />
             ) : (
-                <TranscriptTable transcripts={transcripts} />
+                <TranscriptTreeView transcripts={transcripts} />
             )}
         </div>
     );

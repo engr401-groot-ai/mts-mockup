@@ -1,11 +1,7 @@
-import MtsNavbar from "../components/MtsNavbar";
-
 const MtsMockup = () => {
     return (
         <div className="hero-section">
         <div className="container">
-            <MtsNavbar />
-
             {/* Main Card */}
             <div className="card main-card shadow-sm">
                 <div className="card-body">

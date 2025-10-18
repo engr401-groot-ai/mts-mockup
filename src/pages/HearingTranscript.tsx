@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import MtsNavBar from '../components/MtsNavbar.tsx';
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/hearings/PageHeader.tsx';
 import LoadingState from '../components/hearings/LoadingState.tsx';
@@ -120,7 +119,7 @@ const HearingTranscript = () => {
 
     if (loading) {
         return (
-            <div className="p-8 max-w-6xl mx-auto">
+            <div className="container">
                 <PageHeader 
                     backLink="/hearings"
                     backLabel="Back to Hearings List"
@@ -133,32 +132,25 @@ const HearingTranscript = () => {
 
     if (error) {
         return (
-            <>
-                <MtsNavBar />
-
-                <div className="p-8 max-w-6xl mx-auto">
-                    <PageHeader 
-                        backLink="/hearings2"
-                        backLabel="Back to Hearings List"
-                        title="Error Loading Transcript"
-                    />
-                    
-                    <ErrorDisplay 
+            <div className="container">
+                <PageHeader 
+                    backLink="/hearings"
+                    backLabel="Back to Hearings List"
+                    title="Error Loading Transcript"
+                />
+                
+                <ErrorDisplay 
                         message={error}
                         onRetry={fetchTranscript}
                     />
-                </div>
-            </>
+            </div>
         );
     }
 
     return (
-        <>
-        <div className="p-8 max-w-6xl mx-auto min-h-screen bg-gray-50">
-            <MtsNavBar />
-
+        <div className="container">
             <PageHeader 
-                backLink="/hearings2"
+                backLink="/hearings"
                 backLabel="Back to Hearings List"
                 title="Hearing Transcript"
                 subtitle={`${year} / ${committee} / ${billName} / ${videoTitle}`}
@@ -234,7 +226,6 @@ const HearingTranscript = () => {
                 </div>
             )}
         </div>
-        </>
     );
 };
 
