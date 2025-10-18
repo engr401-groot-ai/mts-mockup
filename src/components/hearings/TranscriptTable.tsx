@@ -58,7 +58,7 @@ const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
                             </td>
                             <td className="px-4 py-3">
                                 <Link
-                                    to={`/hearing2/${transcript.year}/${transcript.committee}/${transcript.bill_name}/${transcript.video_title}`}
+                                    to={`/hearing/${transcript.year}/${transcript.committee}/${transcript.bill_name}/${transcript.video_title}`}
                                     className="text-blue-600 hover:underline text-sm"
                                 >
                                     View Transcript

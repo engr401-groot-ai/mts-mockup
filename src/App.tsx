@@ -19,8 +19,8 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Navigate to="/mts-mockup" replace />} />
           <Route path="/mts-mockup" element={<MtsMockup />} />
-          <Route path="/hearings2/" element={<Hearings />} />
-          <Route path="/hearing2/:year/:committee/:billName/:videoTitle" element={<HearingTranscript />} />
+          <Route path="/hearings/" element={<Hearings />} />
+          <Route path="/hearing/:year/:committee/:billName/:videoTitle" element={<HearingTranscript />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
