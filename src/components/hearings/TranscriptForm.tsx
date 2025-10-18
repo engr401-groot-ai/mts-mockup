@@ -27,7 +27,6 @@ const TranscriptForm: React.FC<TranscriptForm2Props> = ({ onSubmit, onCancel }) 
     const [ampm, setAmpm] = useState<'AM' | 'PM'>('AM');
     const [title, setTitle] = useState('');
     const [transcribing, setTranscribing] = useState(false);
-    const [progress, setProgress] = useState(0);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     const availableCommittees = useMemo(() => getCommitteesByChamber(chamber), [chamber]);
@@ -69,14 +68,6 @@ const TranscriptForm: React.FC<TranscriptForm2Props> = ({ onSubmit, onCancel }) 
         }
 
         setTranscribing(true);
-        setProgress(0);
-
-        const progressInterval = setInterval(() => {
-            setProgress(prev => {
-                if (prev >= 90) return prev;
-                return prev + Math.random() * 15;
-            });
-        }, 2000);
 
         try {
             const billValidation = validateBillIds(billIds);
@@ -98,30 +89,22 @@ const TranscriptForm: React.FC<TranscriptForm2Props> = ({ onSubmit, onCancel }) 
 
             await onSubmit(data);
 
-            clearInterval(progressInterval);
-            setProgress(100);
-
-            setTimeout(() => {
-                setYoutubeUrl('');
-                setHearingDate('');
-                setChamber('');
-                setCommittee('');
-                setBillIds('');
-                setRoom('');
-                setAmpm('AM');
-                setTitle('');
-                setErrors({});
-                setProgress(0);
-            }, 1000);
+            // Clear form on success
+            setYoutubeUrl('');
+            setHearingDate('');
+            setChamber('');
+            setCommittee('');
+            setBillIds('');
+            setRoom('');
+            setAmpm('AM');
+            setTitle('');
+            setErrors({});
         } catch (err) {
             console.error('Form submission error:', err);
-            clearInterval(progressInterval);
-            setProgress(0);
             
             const errorMessage = err instanceof Error ? err.message : 'Failed to create transcript';
             setErrors(prev => ({ ...prev, submit: errorMessage }));
         } finally {
-            clearInterval(progressInterval);
             setTranscribing(false);
         }
     };
@@ -344,30 +327,8 @@ const TranscriptForm: React.FC<TranscriptForm2Props> = ({ onSubmit, onCancel }) 
 
                 {transcribing && (
                     <div className="bg-blue-50 border border-blue-200 rounded p-4 text-sm text-blue-800">
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="font-semibold">Transcription in progress...</p>
-                            <span className="text-xs font-mono">{Math.round(progress)}%</span>
-                        </div>
-                        <p className="mt-1 mb-3">This process may take several minutes depending on the video length. Please do not close or refresh this page.</p>
-                        
-                        {/* Progress bar */}
-                        <div className="w-full bg-blue-200 rounded-full h-3 overflow-hidden">
-                            <div 
-                                className="h-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500 ease-out"
-                                style={{
-                                    width: `${Math.min(progress, 100)}%`,
-                                }}
-                            />
-                        </div>
-                        
-                        {/* Status message */}
-                        <p className="text-xs text-blue-700 mt-2 text-center">
-                            {progress < 30 && 'Downloading audio from YouTube...'}
-                            {progress >= 30 && progress < 60 && 'Transcribing audio with AI...'}
-                            {progress >= 60 && progress < 90 && 'Processing segments and timestamps...'}
-                            {progress >= 90 && progress < 100 && 'Uploading to cloud storage...'}
-                            {progress >= 100 && 'Complete!'}
-                        </p>
+                        <p className="font-semibold">Transcription in progress...</p>
+                        <p className="mt-2">This process may take several minutes depending on the video length. Please do not close or refresh this page.</p>
                     </div>
                 )}
             </form>

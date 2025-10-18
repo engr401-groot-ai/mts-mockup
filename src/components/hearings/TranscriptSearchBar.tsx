@@ -1,10 +1,9 @@
 import React from 'react';
-import { Search, Download, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface TranscriptSearchBarProps {
     searchTerm: string;
     onSearchChange: (value: string) => void;
-    onDownload: () => void;
     searchResults?: {
         total: number;
         current: number;
@@ -16,7 +15,6 @@ interface TranscriptSearchBarProps {
 const TranscriptSearchBar: React.FC<TranscriptSearchBarProps> = ({
     searchTerm,
     onSearchChange,
-    onDownload,
     searchResults,
     onNextResult,
     onPrevResult,
@@ -104,15 +102,6 @@ const TranscriptSearchBar: React.FC<TranscriptSearchBarProps> = ({
                         </>
                     )}
                 </div>
-
-                {/* Download Button */}
-                <button
-                    onClick={onDownload}
-                    className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition-colors"
-                >
-                    <Download className="w-4 h-4" />
-                    Download
-                </button>
             </div>
         </div>
     );

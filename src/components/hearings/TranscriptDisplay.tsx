@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
+import TranscriptDownload from './TranscriptDownload';
 
 interface TranscriptSegment {
     id: number,
@@ -14,6 +15,7 @@ interface TranscriptProps {
     searchTerm?: string;
     currentSearchIndex?: number;
     onSearchResultsChange?: (results: { total: number; matches: Array<{ segmentId: number; matchIndex: number }> }) => void;
+    onDownload?: () => void;
 }
 
 const TranscriptDisplay: React.FC<TranscriptProps> = ({
@@ -23,8 +25,10 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
     searchTerm = '',
     currentSearchIndex = 0,
     onSearchResultsChange,
+    onDownload,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const [activeTab, setActiveTab] = useState<'fullText' | 'mentions'>('fullText');
 
     // Calculate all search matches
     const searchMatches = useMemo(() => {
@@ -146,28 +150,77 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
     }
 
     return (
-        <div ref={containerRef} className="h-96 overflow-y-auto space-y-2 p-4">
-            {segments.map((segment) => (
-                <div
-                    key={segment.id}
-                    className={`flex gap-3 p-2 rounded-lg transition-colors ${
-                        isCurrentSegment(segment.start, segment.end)
-                            ? 'bg-blue-100 border-l-4 border-blue-500'
-                            : 'hover:bg-gray-50'
-                    }`}
-                >
-                    <button
-                        onClick={() => onTimestampClick(segment.start)}
-                        className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm whitespace-nowrap font-medium min-w-[3rem] text-left"
-                    >
-                        {formatTime(segment.start)}
-                    </button>
-                    <p className="text-gray-800 leading-relaxed">
-                        {highlightText(segment.text, segment.id)}
-                    </p>
+        <>
+            {/* Header with Download */}
+            {onDownload && (
+                <div className="p-4 border-b">
+                    <TranscriptDownload 
+                        onDownload={onDownload}
+                        segmentCount={segments.length}
+                    />
                 </div>
-            ))}
-        </div>
+            )}
+            
+            {/* Tabs */}
+            <div className="border-b">
+                <div className="flex">
+                    <button
+                        onClick={() => setActiveTab('fullText')}
+                        className={`px-6 py-3 font-medium text-sm transition-colors relative ${
+                            activeTab === 'fullText'
+                                ? 'text-blue-600 border-b-2 border-blue-600'
+                                : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                    >
+                        Full Text
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('mentions')}
+                        className={`px-6 py-3 font-medium text-sm transition-colors relative ${
+                            activeTab === 'mentions'
+                                ? 'text-blue-600 border-b-2 border-blue-600'
+                                : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                    >
+                        Mentions
+                    </button>
+                </div>
+            </div>
+            
+            {/* Tab Content */}
+            {activeTab === 'fullText' ? (
+                <div ref={containerRef} className="flex-1 overflow-y-auto space-y-2 p-4">
+                    {segments.map((segment) => (
+                        <div
+                            key={segment.id}
+                            className={`flex gap-3 p-2 rounded-lg transition-colors ${
+                                isCurrentSegment(segment.start, segment.end)
+                                    ? 'bg-blue-100 border-l-4 border-blue-500'
+                                    : 'hover:bg-gray-50'
+                            }`}
+                        >
+                            <button
+                                onClick={() => onTimestampClick(segment.start)}
+                                className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm whitespace-nowrap font-medium min-w-[3rem] text-left"
+                            >
+                                {formatTime(segment.start)}
+                            </button>
+                            <p className="text-gray-800 leading-relaxed">
+                                {highlightText(segment.text, segment.id)}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="flex-1 overflow-y-auto p-4">
+                    <div className="flex items-center justify-center h-full">
+                        <div className="text-center">
+                            <p className="text-gray-500 mb-2">TODO: Implicit and Explicit Mentions</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 };
 
