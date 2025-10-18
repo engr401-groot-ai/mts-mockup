@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/hearings/PageHeader.tsx';
 import LoadingState from '../components/hearings/LoadingState.tsx';
@@ -87,12 +87,12 @@ const HearingTranscript = () => {
         }
     }
 
-    const handleSearchResultsChange = (results: { total: number; matches: Array<{ segmentId: number; matchIndex: number }> }) => {
+    const handleSearchResultsChange = useCallback((results: { total: number; matches: Array<{ segmentId: number; matchIndex: number }> }) => {
         setSearchResults(prev => ({
             ...results,
             current: results.total > 0 ? Math.min(prev.current || 1, results.total) : 0
         }));
-    };
+    }, []);
 
     const handleNextResult = () => {
         setSearchResults(prev => ({

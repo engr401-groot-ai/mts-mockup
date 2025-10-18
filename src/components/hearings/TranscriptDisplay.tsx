@@ -58,8 +58,12 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
     }, [searchTerm, segments]);
 
     // Notify parent of search results
+    const previousMatchCountRef = useRef<number>(-1);
+    
     useEffect(() => {
-        if (onSearchResultsChange) {
+        // Only update if the number of matches has actually changed
+        if (onSearchResultsChange && searchMatches.length !== previousMatchCountRef.current) {
+            previousMatchCountRef.current = searchMatches.length;
             onSearchResultsChange({
                 total: searchMatches.length,
                 matches: searchMatches.map(m => ({ segmentId: m.segmentId, matchIndex: m.matchIndex }))
