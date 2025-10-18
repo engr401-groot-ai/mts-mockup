@@ -22,6 +22,7 @@ export interface Metadata {
     year: string;
     committee: string;
     bill_name: string;
+    bill_ids?: string[];
     video_title: string;
     room: string;
     ampm: string;
@@ -61,6 +62,7 @@ export interface TranscriptionRequest {
     year: string;
     committee: string;
     bill_name: string;
+    bill_ids?: string[];
     video_title: string;
     hearing_date: string;
     room?: string;

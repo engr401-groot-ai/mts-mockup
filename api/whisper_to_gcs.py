@@ -270,6 +270,7 @@ def transcribe():
     year = data.get('year')
     committee = data.get('committee')
     bill_name = data.get('bill_name')
+    bill_ids = data.get('bill_ids', [])
     video_title = data.get('video_title')
     hearing_date = data.get('hearing_date', datetime.now().strftime('%Y-%m-%d'))
     room = data.get('room', '')
@@ -346,6 +347,7 @@ def transcribe():
             'year': year,
             'committee': committee,
             'bill_name': bill_name,
+            'bill_ids': bill_ids,
             'video_title': video_title,
             'room': room,
             'ampm': ampm,
@@ -474,7 +476,7 @@ def list_transcripts():
 
 # Run the Flask app
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
+    port = int(os.getenv('PORT', 5001))
     print(f"\n{'='*60}")
     print(f"Starting Transcription API on port {port}")
     print(f"Model: {MODEL_NAME}")

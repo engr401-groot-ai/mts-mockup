@@ -8,65 +8,45 @@ import MetadataCard from '../components/hearings/MetadataCard';
 import TranscriptSearchBar from '../components/hearings/TranscriptSearchBar';
 import TranscriptDisplay from '../components/hearings/TranscriptDisplay';
 import VideoPlayer, { VideoPlayerRef } from '../components/hearings/VideoPlayer';
+import type { ClientResponse, Segment } from '../types/hearings';
 
-interface Word {
-    word: string;
-    startTime: number;
-    endTime: number;
+interface SearchResults {
+    total: number;
+    current: number;
+    matches: Array<{ segmentId: number; matchIndex: number }>;
 }
 
-interface TranscriptBlock {
-    transcript: string;
-    words: Word[];
-}
-
-interface TranscriptSegement {
-    id: number;
-    start: number;
-    end: number;
-    text: string;
-}
-
-interface TranscriptData {
-    transcription: TranscriptBlock[];
-    fullText?: string;
-    youtube_url?: string;
-    segments?: TranscriptSegement[];
-    metadata?: {
-        id: string;
-        title: string;
-        duration: number;
-        model: string;
-        totalSegments?: number;
-    };
-}
-
-const HearingTranscript = () => {
-    const { id } = useParams<{ id: string }>();
-    const [transcript, setTranscript] = useState<TranscriptData | null>(null);
+const HearingTranscript2 = () => {
+    const { year, committee, billName, videoTitle } = useParams<{ 
+        year: string; 
+        committee: string; 
+        billName: string; 
+        videoTitle: string; 
+    }>();
+    const [transcript, setTranscript] = useState<ClientResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentTime, setCurrentTime] = useState(0);
     const videoPlayerRef = useRef<VideoPlayerRef>(null);
-    const [searchResults, setSearchResults] = useState<{
-        total: number;
-        current: number;
-        matches: Array<{ segmentId: number; matchIndex: number }>;
-    }>({ total: 0, current: 0, matches: [] });
+    const [searchResults, setSearchResults] = useState<SearchResults>({ 
+        total: 0, 
+        current: 0, 
+        matches: [] 
+    });
 
     useEffect(() => {
-        if (id) {
+        if (year && committee && billName && videoTitle) {
             fetchTranscript();
         }
-    }, [id]);
+    }, [year, committee, billName, videoTitle]);
 
     const fetchTranscript = async () => {
         try {
             setLoading(true);
             setError(null);
 
-            const res = await fetch(`http://localhost:3001/api/transcript/${id}`);
+            const res = await fetch(`http://localhost:3001/api/transcript/${year}/${committee}/${billName}/${videoTitle}`);
 
             if (!res.ok) {
                 if (res.status === 404) {
@@ -75,7 +55,7 @@ const HearingTranscript = () => {
                 throw new Error(`HTTP error! status: ${res.status}`);
             }
 
-            const data = await res.json();
+            const data: ClientResponse = await res.json();
             setTranscript(data);
         } catch (err) {
             console.error('Failed to load transcript:', err);
@@ -91,7 +71,7 @@ const HearingTranscript = () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `transcript-${id}.txt`;
+        a.download = `transcript-${year}-${committee}-${billName}-${videoTitle}.txt`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -142,7 +122,7 @@ const HearingTranscript = () => {
         return (
             <div className="p-8 max-w-6xl mx-auto">
                 <PageHeader 
-                    backLink="/hearings-list"
+                    backLink="/hearings2"
                     backLabel="Back to Hearings List"
                     title="Loading Transcript..."
                 />
@@ -158,7 +138,7 @@ const HearingTranscript = () => {
 
                 <div className="p-8 max-w-6xl mx-auto">
                     <PageHeader 
-                        backLink="/hearings-list"
+                        backLink="/hearings2"
                         backLabel="Back to Hearings List"
                         title="Error Loading Transcript"
                     />
@@ -178,14 +158,20 @@ const HearingTranscript = () => {
             <MtsNavBar />
 
             <PageHeader 
-                backLink="/hearings-list"
+                backLink="/hearings2"
                 backLabel="Back to Hearings List"
                 title="Hearing Transcript"
-                subtitle={`ID: ${id}`}
+                subtitle={`${year} / ${committee} / ${billName} / ${videoTitle}`}
             />
 
             {transcript?.metadata && (
-                <MetadataCard metadata={transcript.metadata} />
+                <MetadataCard metadata={{
+                    id: transcript.metadata.hearing_id,
+                    title: transcript.metadata.title,
+                    duration: transcript.metadata.duration,
+                    model: transcript.transcriptInfo.model,
+                    totalSegments: transcript.transcriptInfo.total_segments
+                }} />
             )}
 
              <TranscriptSearchBar 
@@ -252,4 +238,4 @@ const HearingTranscript = () => {
     );
 };
 
-export default HearingTranscript;
+export default HearingTranscript2;

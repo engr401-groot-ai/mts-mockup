@@ -18,7 +18,7 @@ dotenv.config();
 
 const app = express();
 const PORT = 3001;
-const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:5000';
+const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:5001';
 const REQUEST_TIMEOUT = 3600000;
 
 app.use(cors());
@@ -53,28 +53,30 @@ function formatTranscriptResponse(data: PythonAPIResponse): ClientResponse {
 
 // Post endpoint to handle transcribing new videos
 app.post('/api/transcribe', async (req: Request, res: Response) => {
-    const { youtubeUrl, year, committee, billName, videoTitle, hearingDate, room, ampm } = req.body;
-
-    console.log('Received transcription request for URL:', youtubeUrl);
+    const { youtube_url, year, committee, bill_name, bill_ids, video_title, hearing_date, room, ampm } = req.body;
 
     // Validate required fields
-    if (!youtubeUrl || !year || !committee || !billName || !videoTitle) {
+    if (!youtube_url || !year || !committee || !bill_name || !video_title) {
+        console.log('Validation failed:', { youtube_url: !!youtube_url, year: !!year, committee: !!committee, bill_name: !!bill_name, video_title: !!video_title });
+        
         return res.status(400).json({ 
             error: 'Missing required fields',
-            required: ['youtubeUrl', 'year', 'committee', 'billName', 'videoTitle', 'hearingDate']
+            required: ['youtube_url', 'year', 'committee', 'bill_name', 'video_title', 'hearing_date'],
+            received: { youtube_url, year, committee, bill_name, video_title, hearing_date }
         });
     }
 
     try {
-        console.log('Forwarding request to Python API at:', PYTHON_API_URL);
+        console.log('Transcribing:', { year, committee, bill_name, video_title });
 
         const requestPayload: TranscriptionRequest = {
-            youtube_url: youtubeUrl,
+            youtube_url: youtube_url,
             year: year,
             committee: committee,
-            bill_name: billName,
-            video_title: videoTitle,
-            hearing_date: hearingDate || new Date().toISOString().split('T')[0],
+            bill_name: bill_name,
+            bill_ids: bill_ids,
+            video_title: video_title,
+            hearing_date: hearing_date || new Date().toISOString().split('T')[0],
             room: room,
             ampm: ampm
         };
@@ -82,20 +84,12 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
         const response = await axios.post<PythonAPIResponse>(
             `${PYTHON_API_URL}/transcribe`, 
             requestPayload,
-            {
-                timeout: REQUEST_TIMEOUT,
-                onDownloadProgress: () => {
-                    console.log('Receiving data from Python API...');
-                }
-            }
+            { timeout: REQUEST_TIMEOUT }
         );
 
-        console.log('Transcription successful!', response.data.folder_path);
-        if (response.data.stats) {
-            console.log('Duration:', response.data.stats.duration_minutes.toFixed(2), 'minutes');
-            console.log('Processing Time:', response.data.stats.processing_time_minutes.toFixed(2), 'minutes');
-            console.log('Segments:', response.data.stats.segments);
-        }
+        console.log('Transcription complete:', response.data.folder_path, 
+            response.data.stats ? `(${response.data.stats.duration_minutes.toFixed(1)}min, ${response.data.stats.segments} segments)` : ''
+        );
 
         const formattedResponse = formatTranscriptResponse(response.data);
         
@@ -125,14 +119,12 @@ app.get('/api/transcript/:year/:committee/:billName/:videoTitle', async (req: Re
     const { year, committee, billName, videoTitle } = req.params;
     const folderPath = `${year}/${committee}/${billName}/${videoTitle}`;
 
-    console.log('Fetching transcript from folder:', folderPath);
-
     try {
         const response = await axios.get<PythonAPIResponse>(
             `${PYTHON_API_URL}/transcript/${encodeURIComponent(folderPath)}`
         );
 
-        console.log('Retreived transcript for: ', response.data.metadata?.title);
+        console.log('Retrieved:', response.data.metadata?.title);
 
         const formattedResponse = formatTranscriptResponse(response.data);
 
