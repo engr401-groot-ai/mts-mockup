@@ -29,7 +29,7 @@ CORS(app)
 
 # Initialize google cloud storage
 storage_client = storage.Client()
-BUCKET_NAME = os.getenv('GCS_BUCKET', 'hearing-videos')
+BUCKET_NAME = os.getenv('GCS_BUCKET', 'hearing_videos')
 
 # Load Open AI Whisper Model
 print("Loading Whisper model...")
