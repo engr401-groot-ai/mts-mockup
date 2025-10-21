@@ -1,0 +1,8 @@
+Flask
+flask-cors
+torch
+torchaudio
+whisperx
+yt-dlp
+google-cloud-storage
+pydub

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // RUN: npx tsx server.ts
 
 import express from 'express';
