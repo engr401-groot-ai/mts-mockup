@@ -1,5 +1,3 @@
-// RUN: npx tsx server.ts
-
 import express from 'express';
 import type { Request, Response } from 'express';
 import cors from 'cors';
@@ -24,28 +22,28 @@ app.use(cors());
 app.use(express.json());
 
 function formatTranscriptResponse(data: PythonAPIResponse): ClientResponse {
+    const transcript = data.transcript ?? { segments: [], text: "", model: "", processing_time: 0, total_segments: 0, language: "" };
+    
     return {
-        transcription: data.transcript.segments.map(seg => ({
+        transcription: transcript.segments.map(seg => ({
             transcript: seg.text,
-            words: seg.words.map(w => ({
+            words: seg.words?.map(w => ({
                 word: w.word,
                 startTime: w.start,
                 endTime: w.end
-            }))
+            })) ?? []
         })),
-        fullText: data.transcript.text,
-        youtube_url: data.metadata.youtube_url,
-        segments: data.transcript.segments,
-        folderPath: data.folder_path,
-        metadataPath: data.metadata_path,
-        transcriptPath: data.transcript_path,
-        cached: data.cached,
-        metadata: data.metadata,
+        fullText: transcript.text,
+        youtube_url: data.metadata?.youtube_url ?? "",
+        segments: transcript.segments,
+        folderPath: data.folder_path ?? "",
+        cached: data.cached ?? false,
+        metadata: data.metadata ?? {},
         transcriptInfo: {
-            model: data.transcript.model,
-            processing_time: data.transcript.processing_time,
-            total_segments: data.transcript.total_segments,
-            language: data.transcript.language
+            model: transcript.model,
+            processing_time: transcript.processing_time,
+            total_segments: transcript.total_segments,
+            language: transcript.language
         }
     };
 }
@@ -55,6 +53,7 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
     const { youtube_url, year, committee, bill_name, bill_ids, video_title, hearing_date, room, ampm } = req.body;
 
     // Validate required fields
+    const validatedHearingDate = hearing_date || new Date().toISOString().split('T')[0];
     if (!youtube_url || !year || !committee || !bill_name || !video_title) {
         console.log('Validation failed:', { youtube_url: !!youtube_url, year: !!year, committee: !!committee, bill_name: !!bill_name, video_title: !!video_title });
         
@@ -85,14 +84,26 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
             requestPayload,
             { timeout: REQUEST_TIMEOUT }
         );
-
-        console.log('Transcription complete:', response.data.folder_path, 
-            response.data.stats ? `(${response.data.stats.duration_minutes.toFixed(1)}min, ${response.data.stats.segments} segments)` : ''
-        );
-
-        const formattedResponse = formatTranscriptResponse(response.data);
         
-        res.json(formattedResponse);
+    console.log('Python /transcribe response:', JSON.stringify(response.data || {}, null, 2));
+
+    const resp: any = response.data;
+
+    if (!resp || resp.status === 'queued' || resp.job_id) {
+      // Return 202 Accepted for queued jobs
+      return res.status(202).json({
+        status: resp?.status ?? 'queued',
+        job_id: resp?.job_id,
+        message: resp?.message ?? 'Job queued'
+      });
+    }
+
+    if (resp.transcript) {
+      const formattedResponse = formatTranscriptResponse(resp as PythonAPIResponse);
+      return res.json(formattedResponse);
+    }
+
+    return res.json(resp);
     } catch (error) {
         console.error('Error during transcription:', error);
 
@@ -112,15 +123,15 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
     }
 });
 
-
 // Get endpoint to retrieve a specific transcripts
 app.get('/api/transcript/:year/:committee/:billName/:videoTitle', async (req: Request, res: Response) => {
     const { year, committee, billName, videoTitle } = req.params;
     const folderPath = `${year}/${committee}/${billName}/${videoTitle}`;
+    const encodedFolderPath = encodeURIComponent(folderPath).replace(/%2F/g, '/');
 
     try {
         const response = await axios.get<PythonAPIResponse>(
-            `${PYTHON_API_URL}/transcript/${encodeURIComponent(folderPath)}`
+          `${PYTHON_API_URL}/transcript/${encodedFolderPath}`
         );
 
         console.log('Retrieved:', response.data.metadata?.title);
@@ -197,6 +208,26 @@ app.get('/health', async (req: Request, res: Response) => {
         error: error instanceof Error ? error.message : 'Unknown error'
       }
     });
+  }
+});
+
+// Endpoint to check status of asynchronous transcription job
+app.get('/api/job-status/:jobId', async (req: Request, res: Response) => {
+  const jobId = encodeURIComponent(req.params.jobId);
+
+  try {
+    const response = await axios.get(`${PYTHON_API_URL}/job_status/${jobId}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching job status:', error);
+    if (axios.isAxiosError(error)) {
+      res.status(error.response?.status || 500).json({
+        error: 'Failed to fetch job status',
+        details: error.response?.data || error.message
+      });
+    } else {
+      res.status(500).json({ error: 'Unexpected error fetching job status' });
+    }
   }
 });
 

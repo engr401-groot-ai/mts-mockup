@@ -1,8 +1,28 @@
-Flask
-flask-cors
-torch
-torchaudio
-whisperx
-yt-dlp
-google-cloud-storage
-pydub
+# Core
+flask==3.0.3
+flask-cors==4.0.1
+python-dotenv==1.0.1
+yt-dlp==2025.2.19
+pydub==0.25.1
+
+# Torch + Audio
+torch==2.8.0
+torchaudio==2.8.0
+
+# WhisperX dependencies
+whisperx==3.7.4
+ctranslate2>=4.5.0
+faster-whisper>=1.2.0
+
+# Pyannote for VAD/alignment (pin to reduce warnings)
+pyannote.audio==3.3.2
+
+# Speechbrain (ensure latest stable API)
+speechbrain==1.0.0
+
+# Supporting packages
+numpy>=2.0.2,<2.1.0
+pandas>=2.2.3,<2.3.0
+nltk>=3.9.1
+av<16.0.0
+sympy==1.13.3

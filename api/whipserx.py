@@ -1,29 +1,32 @@
+import os
+import re
+import sys
+import math
+import uuid
+import json
+import subprocess
+import threading
+from pathlib import Path
+from datetime import datetime
+from contextlib import contextmanager
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import whisperx
 import torch
-import os
-import json
-from google.cloud import storage
-from datetime import datetime
-import tempfile
+import whisperx
 import yt_dlp
-import sys
-import subprocess
-import shutil
-from pathlib import Path
-import re
-import math
-from pydub import AudioSegment
+from google.cloud import storage
 
 '''
 TODO:
-- Rate Limting
-- CORS restrictions
+- Rate Limiting
 - Locks
 - Request timeout handling
 - Proper logging
 - File size and duration checks
+- Job queue management
 '''
 
 # Configurations (can be adjusted as needed)
@@ -50,6 +53,12 @@ else:
 alignment_model, metadata = whisperx.load_align_model(language_code='en', device=DEVICE)
 print(f"WhisperX model '{MODEL_NAME}' loaded on {DEVICE}.")
 
+# Context manager for temporary directories
+@contextmanager
+def managed_temp_dir():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield temp_dir
+
 # Helper function to sanitize path components
 def sanitize_path(component):
     if not component:
@@ -59,19 +68,35 @@ def sanitize_path(component):
     component = re.sub(r'[^\w\s\-]', '_', component)
     return component
 
-# Helper function to convert mp3 to wav
-def convert_to_wav(mp3_path, wav_path, target_sr=16000):
-    audio = AudioSegment.from_mp3(mp3_path)
-    audio = audio.set_channels(1).set_frame_rate(target_sr)
-    audio.export(wav_path, format="wav")
-    return wav_path
+# Helper function to upload json to GCS
+def upload_to_gcs(content, filepath):
+    try:
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(filepath)
+        blob.upload_from_string(
+            json.dumps(content, ensure_ascii=False, indent=2),
+            content_type='application/json'
+        )
+        return f"gs://{BUCKET_NAME}/{filepath}"
+    except Exception as e:
+        raise RuntimeError(f"Failed to upload {filepath} to GCS: {str(e)}")
 
-# Helper function to download youtube video from url and get audio
-def download_youtube_audio(youtube_url):
-    # create a temporary directory to store the downloaded file
-    temp_dir = tempfile.mkdtemp()
+# Helper function to get json from GCS
+def get_from_gcs(filepath):
+    try:
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(filepath)
+
+        if blob.exists():
+            return json.loads(blob.download_as_text())
+        return None
+    except Exception as e:
+        print(f"Error fetching from GCS: {str(e)}", file=sys.stderr)
+        return None
+
+# Helper function to download _u video from url and get audio
+def download_youtube_audio(youtube_url, temp_dir):
     output_path = os.path.join(temp_dir, "audio")
-
     print(f"Downloading audio from {youtube_url}")
 
     ydl_opts = {
@@ -92,32 +117,23 @@ def download_youtube_audio(youtube_url):
         },
     }
 
-    try:
-        # download the audio using yt_dlp
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(youtube_url, download=True)
-            duration = info.get('duration', 0)
-            title = info.get('title', 'unknown_title')
+    # download the audio using yt_dlp
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(youtube_url, download=True)
+        duration = info.get('duration', 0)
+        title = info.get('title', 'unknown_title')
 
-        mp3_file = output_path + ".mp3"
-        wav_file = output_path + ".wav"
-        convert_to_wav(mp3_file, wav_file)
+    wav_file = output_path + ".wav"
 
-        print(f"Downloaded: {title}")
-        print(f"Audio size: {os.path.getsize(wav_file) / (1024 * 1024):.2f} MB")
-        print(f"Duration: {duration // 60} minutes {duration % 60} seconds")
+    print(f"Downloaded: {title}")
+    print(f"Audio size: {os.path.getsize(wav_file) / (1024 * 1024):.2f} MB")
+    print(f"Duration: {duration // 60} minutes {duration % 60} seconds")
 
-        return wav_file, temp_dir, duration, title
-    except Exception as e:
-        print(f"Error downloading Youtube audio: {str(e)}")
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir, ignore_errors=True)
-        raise
+    return wav_file, duration, title
 
 # Helper function to split audio into chunks
 def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
     try:
-        # get audio duration using ffprobe
         result = subprocess.run([
             'ffprobe', '-v', 'error', '-show_entries', 
             'format=duration', '-of', 
@@ -125,22 +141,17 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
         ], capture_output=True, text=True, check=True)
         
         total_duration_seconds = float(result.stdout.strip())
-        total_duration_ms = int(total_duration_seconds * 1000)
-        total_duration_min = total_duration_ms / 1000 / 60
-        print(f"Total audio duration: {total_duration_min:.2f} minutes")
     except Exception as e:
         print(f"Error getting audio duration: {str(e)}")
         return [(audio_path, 0, 0)]
     
     # check if chunking is needed
+    total_duration_ms = int(total_duration_seconds * 1000)
     if total_duration_ms <= chunk_length_ms:
-        print("No chunking needed.")
         return [(audio_path, 0, total_duration_ms)]
 
-    # calculate number of chunks
+    num_chunks = math.ceil(total_duration_seconds * 1000 / chunk_length_ms)
     chunk_length_seconds = chunk_length_ms / 1000
-    num_chunks = math.ceil(total_duration_seconds / chunk_length_seconds)
-    print(f"Splitting audio into {num_chunks} chunks of {chunk_length_ms / 1000 / 60:.1f} minutes each...")
 
     chunks_info = []
     temp_dir = os.path.dirname(audio_path)
@@ -148,11 +159,7 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
     # create chunks
     for i in range(num_chunks):
         start_seconds = i * chunk_length_seconds
-        start_ms = int(start_seconds * 1000)
-
         end_seconds = min((i + 1) * chunk_length_seconds, total_duration_seconds)
-        end_ms = int(end_seconds * 1000)
-
         chunk_duration = end_seconds - start_seconds
 
         # skip chunks shorter than 1 seconds
@@ -175,130 +182,200 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
                 chunk_path
             ], check=True)
 
-            chunks_info.append((chunk_path, start_ms, end_ms))
-            print(f"Chunk {i+1}/{num_chunks} created: {chunk_path} ({start_ms/1000/60:.1f} - {end_ms/1000/60:.1f} min)")
+            chunks_info.append((chunk_path, int(start_seconds*1000), int(end_seconds*1000)))
         except subprocess.CalledProcessError as e:
-            # fallback: return original audio if chunking fails
-            print(f"Error creating chunk {i}: {str(e)}")
-            return [(audio_path, 0, int(total_duration_seconds*1000))]
-        
+            print(f"Error creating chunk {i}: {str(e)} – returning original audio")
+            continue
+
+    if not chunks_info:
+        chunks_info = [(audio_path, 0, int(total_duration_seconds*1000))]
+
     return chunks_info
-
-
 
 # Helper function to transcribe audio chunks
 def transcribe_audio_chunks(audio_path, offset_ms=0):
     print(f"Transcribing audio chunk: {audio_path} (offset: {offset_ms/1000/60:.1f} min)...")
 
-    # run transcription
-    result = model.transcribe(
-        audio_path,
-        language='en',
-        word_timestamps=True,
-        verbose=False,
-        batch_size=16,
-    )
+    try:
+        # run transcription
+        result = model.transcribe(
+            audio_path,
+            language='en',
+            verbose=False,
+            batch_size=16,
+        )
+        print(f"Transcription completed for chunk: {audio_path}")
+    except Exception as e:
+        print(f"Error transcribing chunk {audio_path}: {e}")
+        return [], ""
 
-    # run alignment
-    result_aligned = whisperx.align(
-        result["segments"],
-        model,
-        alignment_model,
-        metadata,
-        audio_path,
-        DEVICE
-    )
+    try:
+        # run alignment
+        result_aligned = whisperx.align(
+            result["segments"],
+            alignment_model,
+            metadata,
+            audio_path,
+            DEVICE
+        )
+        print(f"Alignment completed for chunk: {audio_path}")
+    except Exception as e:
+        print(f"Error aligning chunk {audio_path}: {e}")
+        return [], ""
 
     # adjust timestamps w/ offset
     offset_seconds = offset_ms / 1000.0
     adjusted_segments = []
 
     # for each segment, adjust it and append words
-    for segment in result['segments']:
+    for idx, segment in enumerate(result_aligned.get('segments', [])):
         adjusted_segment = {
-            'id': segment['id'],
-            'start': segment['start'] + offset_seconds,
-            'end': segment['end'] + offset_seconds,
-            'text': segment['text'],
+            'id': segment.get('id', idx),
+            'start': segment.get('start', 0) + offset_seconds,
+            'end': segment.get('end', 0) + offset_seconds,
+            'text': segment.get('text', '').strip(),
             'words': []
         }
+        for word in segment.get('words', []):
+            adjusted_segment['words'].append({
+                'word': word.get('word', ''),
+                'start': word.get('start', 0) + offset_seconds,
+                'end': word.get('end', 0) + offset_seconds,
+                'probability': word.get('probability')
+            })
 
-        if 'words' in segment:
-            for word in segment['words']:
-                adjusted_segment['words'].append({
-                    'word': word.get('word', ''),
-                    'start': word.get('start', 0) + offset_seconds,
-                    'end': word.get('end', 0) + offset_seconds,
-                    'probability': word.get('probability', 0)
-                })
-        
         adjusted_segments.append(adjusted_segment)
-    
-    return adjusted_segments, result_aligned.get("text", "")
 
-# Helper function to transcribe full audio file
-def transcribe_full_audio(audio_path, progress_callback=None):
+    # Build full text from all segments
+    full_text = " ".join(seg['text'] for seg in adjusted_segments if seg.get('text')).strip()
+
+    print(f"Chunk {audio_path} processed, segments: {len(adjusted_segments)}")
+    return adjusted_segments, full_text
+
+# Helper function to transcribe full audio file using parallel processing
+def transcribe_full_audio_parallel(audio_path):
     chunks = split_audio(audio_path)
     all_segments = []
     all_text_parts = []
+
     total_chunks = len(chunks)
-
-    print(f"\nProcessing chunk {index + 1}/{total_chunks}...")
-
-    # process each chunk
-    for index, (chunk_path, start_ms, end_ms) in enumerate(chunks):
-        chunk_num = index + 1
-        if progress_callback:
-            progress_callback(f"Processing chunk {chunk_num}/{total_chunks}...")
-
-        try:
-            segments, text = transcribe_audio_chunks(chunk_path, offset_ms=start_ms)
-        except Exception as e:
-            # skip this chunk on error but continue processing
-            print(f"Error transcribing chunk {chunk_num}: {e}")
-            continue
-
-        for segment in segments:
-            segment['id'] = len(all_segments)
-            all_segments.append(segment)
-        
-        all_text_parts.append(text)
-
-        if chunk_path != audio_path and os.path.exists(chunk_path):
-            try:
-                os.remove(chunk_path)
-                print(f"Cleaned up chunk: {chunk_path}")
-            except Exception as e:
-                print(f"Warning: could not remove chunk {chunk_path}: {e}")
+    completed_chunks = 0
     
-    full_text = ' '.join(all_text_parts)
+    print(f"Starting parallel transcription for {total_chunks} chunks")
 
+    max_workers = min(4, os.cpu_count() or 1)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(transcribe_audio_chunks, c[0], c[1]): c for c in chunks}
+        for future in as_completed(futures):
+            chunk_path, _, _ = futures[future]
+            try:
+                segments, text = future.result()
+                all_segments.extend(segments)
+                all_text_parts.append(text)
+            except Exception as e:
+                print(f"Failed processing chunk {futures[future]}: {e}")
+            finally:
+                try:
+                    os.remove(chunk_path)
+                    print(f"Removed temporary chunk file: {chunk_path}")
+                except Exception:
+                    print(f"Failed to remove temporary chunk file: {chunk_path}")
+                    pass
+
+            completed_chunks += 1
+            print(f"[Progress] {completed_chunks}/{total_chunks} chunks completed")
+
+    full_text = " ".join(part.strip() for part in all_text_parts if part)
+    full_text = re.sub(r'\s+', ' ', full_text)
+
+    print(f"Full transcription completed, total segments: {len(all_segments)}")
     return all_segments, full_text
 
-# Helper function to upload json to GCS
-def upload_to_gcs(content, filepath):
-    bucket = storage_client.bucket(BUCKET_NAME)
-    blob = bucket.blob(filepath)
+# Helper function to run a transcription job
+def run_transcription_job(job_id, youtube_url, year, committee, bill_name, video_title, hearing_date, room, ampm, bill_ids):
+        temp_dir = tempfile.mkdtemp()
+        try:
+            audio_path, duration, title = download_youtube_audio(youtube_url, temp_dir)
 
-    blob.upload_from_string(
-        json.dumps(content, ensure_ascii=False, indent=2),
-        content_type='application/json'
-    )
-    
-    return f"gs://{BUCKET_NAME}/{filepath}"
+            start_time = datetime.now()
+            segments, full_text = transcribe_full_audio_parallel(audio_path)
+            processing_time = (datetime.now() - start_time).total_seconds()
 
-# Helper function to get json from GCS
-def get_from_gcs(filepath):
+            hearing_id = f"{year}_{committee}_{bill_name}_{video_title}"
+            folder_path = f"{year}/{committee}/{bill_name}/{video_title}".replace(' ', '_')
+
+            metadata = {
+                'hearing_id': hearing_id,
+                'title': title,
+                'date': hearing_date,
+                'duration': duration,
+                'youtube_url': youtube_url,
+                'year': year,
+                'committee': committee,
+                'bill_name': bill_name,
+                'bill_ids': bill_ids,
+                'video_title': video_title,
+                'room': room,
+                'ampm': ampm,
+                'folder_path': folder_path,
+                'created_at': datetime.now().isoformat(),
+            }
+
+            transcript = {
+                'hearing_id': hearing_id,
+                'text': full_text,
+                'language': 'en',
+                'duration': duration,
+                'processing_time': processing_time,
+                'model': MODEL_NAME,
+                'segments': segments if segments else [],
+                'total_segments': len(segments),
+                'created_at': datetime.now().isoformat(),
+            }
+
+            upload_to_gcs(metadata, f"{folder_path}/metadata.json")
+            upload_to_gcs(transcript, f"{folder_path}/transcript.json")
+
+            return metadata, transcript, folder_path
+        except Exception as e:
+            raise e
+        finally:
+            for f in Path(temp_dir).glob("*"):
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+            try:
+                os.rmdir(temp_dir)
+            except Exception:
+                pass
+
+
+# Helper function to handle background transcription jobs
+jobs = {}
+jobs_lock = threading.Lock()
+def background_transcribe(job_id, youtube_url, year, committee, bill_name, video_title, hearing_date, room, ampm, bill_ids):
     try:
-        bucket = storage_client.bucket(BUCKET_NAME)
-        blob = bucket.blob(filepath)
+        with jobs_lock:
+            jobs[job_id] = {'status': 'processing', 'progress': '0/0 chunks completed'}
 
-        if blob.exists():
-            return json.loads(blob.download_as_text())
-        return None
+        metadata, transcript, folder_path = run_transcription_job(
+            job_id, youtube_url, year, committee, bill_name, video_title, hearing_date, room, ampm, bill_ids
+        )
+
+        with jobs_lock:
+            jobs[job_id]['status'] = 'completed'
+            jobs[job_id]['progress'] = '100%'
+            jobs[job_id]['result'] = {
+                'metadata': metadata,
+                'transcript': transcript,
+                'folder_path': folder_path
+            }
+
     except Exception as e:
-        print(f"Error fetching from GCS: {str(e)}", file=sys.stderr)
-        return None
+        with jobs_lock:
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['error'] = str(e)
     
 # Flask route to check API health
 @app.route('/health', methods=['GET'])
@@ -315,14 +392,14 @@ def health_check():
 def transcribe():
     data = request.json
     youtube_url = data.get('youtube_url')
-    year = data.get('year')
-    committee = data.get('committee')
-    bill_name = data.get('bill_name')
-    bill_ids = data.get('bill_ids', [])
-    video_title = data.get('video_title')
+    year = sanitize_path(data.get('year', ''))
+    committee = sanitize_path(data.get('committee', ''))
+    bill_name = sanitize_path(data.get('bill_name', ''))
+    video_title = sanitize_path(data.get('video_title', ''))
     hearing_date = data.get('hearing_date', datetime.now().strftime('%Y-%m-%d'))
-    room = data.get('room', '')
-    ampm = data.get('ampm', '')
+    room = sanitize_path(data.get('room', ''))
+    ampm = sanitize_path(data.get('ampm', ''))
+    bill_ids = data.get('bill_ids', [])
 
     # validate all fields
     if not all([youtube_url, year, committee, bill_name, video_title, hearing_date]):
@@ -331,138 +408,23 @@ def transcribe():
             'required': ['youtube_url', 'year', 'committee', 'bill_name', 'video_title', 'hearing_date']
         }), 400
     
-    year = sanitize_path(year)
-    committee = sanitize_path(committee)
-    bill_name = sanitize_path(bill_name)
-    video_title = sanitize_path(video_title)
-    room = sanitize_path(room) if room else ''
-    ampm = sanitize_path(ampm) if ampm else ''
-    
-    temp_dir = None
-    audio_path = None
-    
-    try:
-        # build GCS folder path: hearing-videos/YEAR/COMMITTEE/BILL_NAME/VIDEO_TITLE/
-        folder_path = f"{year}/{committee}/{bill_name}/{video_title}"
-        metadata_path = f"{folder_path}/metadata.json"
-        transcript_path = f"{folder_path}/transcript.json"
+    job_id = str(uuid.uuid4())
+    with jobs_lock:
+        jobs[job_id] = {'status': 'queued'}
 
-        # check if transcript already exists, return cached if true
-        existing_metadata = get_from_gcs(metadata_path)
-        existing_transcript = get_from_gcs(transcript_path)
-        if existing_metadata and existing_transcript:
-            print(f"Returning cached transcript for {folder_path}")
-            return jsonify({
-                'metadata': existing_metadata,
-                'transcript': existing_transcript,
-                'folder_path': f"gs://{BUCKET_NAME}/{folder_path}",
-                'cached': True
-            })
-        
-        # log transcription
-        print(f"\n{'='*60}")
-        print(f"Starting transcription for: {folder_path}")
-        print(f"Year: {year} | Committee: {committee} | Bill: {bill_name}")
-        print(f"Video: {video_title}")
-        print(f"{'='*60}\n")
+    def run_in_background():
+        background_transcribe(
+            job_id, youtube_url, year, committee, bill_name,
+            video_title, hearing_date, room, ampm, bill_ids
+        )
 
-        audio_path, temp_dir, duration, title = download_youtube_audio(youtube_url)
+    threading.Thread(target=run_in_background, daemon=True).start()
 
-        print(f"\nStarting transcription process...")
-        start_time = datetime.now()
-
-        segments, full_text = transcribe_full_audio(audio_path)
-
-        end_time = datetime.now()
-        processing_time = (end_time - start_time).total_seconds()
-
-        print(f"\n{'='*60}")
-        print(f"Transcription completed!")
-        print(f"Processing time: {processing_time / 60:.2f} minutes")
-        print(f"Total segments: {len(segments)}")
-        print(f"Text length: {len(full_text)} characters")
-        print(f"{'='*60}\n")
-
-        # generate meta data and transcript json
-        hearing_id = f"{year}_{committee}_{bill_name}_{video_title}"
-
-        metadata = {
-            'hearing_id': hearing_id,
-            'title': title,
-            'date': hearing_date,
-            'duration': duration,
-            'youtube_url': youtube_url,
-            'year': year,
-            'committee': committee,
-            'bill_name': bill_name,
-            'bill_ids': bill_ids,
-            'video_title': video_title,
-            'room': room,
-            'ampm': ampm,
-            'folder_path': folder_path,
-            'created_at': datetime.now().isoformat(),
-        }
-
-        transcript = {
-            'hearing_id': hearing_id,
-            'text': full_text,
-            'language': 'en',
-            'duration': duration,
-            'processing_time': processing_time,
-            'model': MODEL_NAME,
-            'segments': segments,
-            'total_segments': len(segments),
-            'created_at': datetime.now().isoformat(),
-        }
-
-        # upload metadata and transcript to GCS
-        print(f"Uploading metadata to GCS: {metadata_path}...")
-        metadata_gcs_path = upload_to_gcs(metadata, metadata_path)
-
-        print(f"Uploading transcript to GCS: {transcript_path}...")
-        transcript_gcs_path = upload_to_gcs(transcript, transcript_path)
-
-        print(f"Files uploaded successfully!\n")
-
-        return jsonify({
-            'metadata': metadata,
-            'transcript': transcript,
-            'folder_path': f"gs://{BUCKET_NAME}/{folder_path}",
-            'metadata_path': metadata_gcs_path,
-            'transcript_path': transcript_gcs_path,
-            'cached': False,
-            'stats': {
-                'duration_minutes': duration / 60,
-                'processing_time_minutes': processing_time / 60,
-                'segments': len(segments),
-                'model': MODEL_NAME
-            }
-        })
-    except Exception as e:
-        print(f"\n{'='*60}", file=sys.stderr)
-        print(f"ERROR: {str(e)}", file=sys.stderr)
-        print(f"{'='*60}\n", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        
-        return jsonify({
-            'error': 'Transcription failed',
-            'details': str(e)
-        }), 500
-    finally:
-        if audio_path and os.path.exists(audio_path):
-            try:
-                os.remove(audio_path)
-                print(f"Cleaned up audio file: {audio_path}")
-            except Exception as e:
-                print(f"Warning: could not remove audio file: {e}")
-        
-        if temp_dir and os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-                print(f"Cleaned up temp directory: {temp_dir}")
-            except Exception as e:
-                print(f"Warning: could not remove temp directory: {e}")
+    return jsonify({
+        'job_id': job_id,
+        'status': 'queued',
+        'message': 'Transcription started in background'
+    })
 
 # Flask route to handle GET specific transcript request
 @app.route('/transcript/<path:folder_path>', methods=['GET'])
@@ -521,6 +483,16 @@ def list_transcripts():
             'error': 'Failed to list transcripts',
             'details': str(e)
         }), 500
+
+# Flask route to check job status
+@app.route('/job_status/<job_id>', methods=['GET'])
+def job_status(job_id):
+    with jobs_lock:
+        job = jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    return jsonify(job)
+
 
 # Run the Flask app
 if __name__ == '__main__':

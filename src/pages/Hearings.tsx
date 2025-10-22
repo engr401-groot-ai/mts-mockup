@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+'use client';
+
+import { useState, useEffect } from 'react';
 import TranscriptForm from '../components/hearings/TranscriptForm.tsx';
 import TranscriptTreeView from '../components/hearings/TranscriptTreeView.tsx';
 import EmptyState from '../components/hearings/EmptyState.tsx';
@@ -17,22 +19,34 @@ const Hearings = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showAddForm, setShowAddForm] = useState(false);
+    
 
     useEffect(() => {
         fetchTranscripts();
+
+        const handleUpdate = () => {
+            console.log('Transcript update detected — refreshing list...');
+            fetchTranscripts();
+        };
+
+        window.addEventListener('transcript-updated', handleUpdate);
+
+        return () => {
+            window.removeEventListener('transcript-updated', handleUpdate);
+        };
     }, []);
 
     const fetchTranscripts = async () => {
         try {
             setLoading(true);
             setError(null);
-            
+
             const res = await fetch('http://localhost:3001/api/transcripts');
-            
+
             if (!res.ok) {
                 throw new Error(`HTTP error! status: ${res.status}`);
             }
-            
+
             const data = await res.json();
             setTranscripts(data.transcripts || []);
         } catch (err) {
@@ -44,6 +58,7 @@ const Hearings = () => {
     };
 
     const handleAddTranscript = async (data: TranscriptionRequest) => {
+
         try {
             const res = await fetch('http://localhost:3001/api/transcribe', {
                 method: 'POST',
@@ -51,19 +66,17 @@ const Hearings = () => {
                 body: JSON.stringify(data),
             });
 
+            const result = await res.json();
+
             if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.details || errorData.error || `HTTP error! status: ${res.status}`);
+                const err = await res.json();
+                throw new Error(err.details || err.error || 'Failed to start transcription job');
             }
-
-            await res.json();
-
-            setShowAddForm(false);
-            await fetchTranscripts();
-            alert('Transcript created successfully!');
+            
+            return result;
         } catch (error) {
-            console.error('Transcription failed:', error);
-            throw error;
+            console.error('Failed to start transcription:', error);
+            setError(error instanceof Error ? error.message : 'Transcription failed');
         }
     };
 
@@ -83,20 +96,20 @@ const Hearings = () => {
                     <h1 className="text-2xl font-bold">Hearings & Transcripts</h1>
                     <button
                         onClick={() => setShowAddForm(!showAddForm)}
-                        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                        className={`bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600`}
                     >
                         {showAddForm ? 'Cancel' : '+ Add New Transcript'}
                     </button>
                 </div>
 
                 {showAddForm && (
-                    <TranscriptForm 
+                    <TranscriptForm
                         onSubmit={handleAddTranscript}
                         onCancel={() => setShowAddForm(false)}
                     />
                 )}
 
-                <ErrorDisplay 
+                <ErrorDisplay
                     message={error}
                     onRetry={fetchTranscripts}
                 />
@@ -120,14 +133,14 @@ const Hearings = () => {
             </div>
 
             {showAddForm && (
-                <TranscriptForm 
+                <TranscriptForm
                     onSubmit={handleAddTranscript}
                     onCancel={() => setShowAddForm(false)}
                 />
             )}
 
             {transcripts.length === 0 ? (
-                <EmptyState 
+                <EmptyState
                     message="No transcripts found"
                     actionLabel="Create First Transcript"
                     onAction={showAddForm ? undefined : () => setShowAddForm(true)}
