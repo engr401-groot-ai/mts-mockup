@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronRight, ChevronDown, FileText, Folder, FolderOpen } from 'lucide-react';
 import type { TranscriptListItem } from '../../types/hearings';
 import { formatDateShort, formatDuration } from '../../lib/formatUtils';
+import { committeeToSlug } from '../../lib/transcriptUtils';
 
 interface TranscriptTreeViewProps {
     transcripts: TranscriptListItem[];
@@ -54,14 +55,17 @@ const TranscriptTreeView: React.FC<TranscriptTreeViewProps> = ({ transcripts }) 
         filteredTranscripts.forEach(transcript => {
             // Determine bill type (HB or SB) from bill_name
             const billType = transcript.bill_name.match(/^(HB|SB)/)?.[1] || 'OTHER';
-            
+            const committeeKey = Array.isArray(transcript.committee) ? transcript.committee.join('-') : transcript.committee;
+            const committeeLabel = Array.isArray(transcript.committee) ? transcript.committee.join(', ') : transcript.committee;
+
             if (!tree[billType]) tree[billType] = {};
-            if (!tree[billType][transcript.committee]) tree[billType][transcript.committee] = {};
-            if (!tree[billType][transcript.committee][transcript.bill_name]) {
-                tree[billType][transcript.committee][transcript.bill_name] = [];
+            if (!tree[billType][committeeKey]) tree[billType][committeeKey] = {};
+            if (!tree[billType][committeeKey][transcript.bill_name]) {
+                tree[billType][committeeKey][transcript.bill_name] = [];
             }
-            
-            tree[billType][transcript.committee][transcript.bill_name].push(transcript);
+
+            const t = { ...transcript, committee: committeeLabel } as TranscriptListItem;
+            tree[billType][committeeKey][transcript.bill_name].push(t);
         });
 
         // Convert to tree nodes
@@ -184,7 +188,7 @@ const TranscriptTreeView: React.FC<TranscriptTreeViewProps> = ({ transcripts }) 
                             </div>
                         </div>
                         <Link
-                            to={`/hearing/${node.transcript.year}/${node.transcript.committee}/${node.transcript.bill_name}/${node.transcript.video_title}`}
+                            to={`/hearing/${node.transcript.year}/${committeeToSlug(node.transcript.committee)}/${node.transcript.bill_name}/${node.transcript.video_title}`}
                             className="text-blue-600 hover:text-blue-800 underline text-sm font-medium whitespace-nowrap flex-shrink-0"
                         >
                             View Analysis

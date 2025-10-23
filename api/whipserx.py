@@ -10,6 +10,8 @@ from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
 import tempfile
+import shutil
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Flask, request, jsonify
@@ -32,7 +34,7 @@ TODO:
 # Configurations (can be adjusted as needed)
 MAX_VIDEO_DURATION_SECONDS = 10800
 MAX_AUDIO_FILE_SIZE_MB = 500
-CHUNK_LENGTH_MS = 10 * 60 * 1000
+CHUNK_LENGTH_MS = 20 * 60 * 1000
 MODEL_NAME = os.getenv('WHISPER_MODEL_NAME', 'large-v3')
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -77,8 +79,21 @@ def upload_to_gcs(content, filepath):
             json.dumps(content, ensure_ascii=False, indent=2),
             content_type='application/json'
         )
-        return f"gs://{BUCKET_NAME}/{filepath}"
+        try:
+            exists = blob.exists()
+        except Exception as e:
+            print(f"Warning: could not verify blob existence for {filepath}: {e}")
+            exists = None
+
+        gcs_path = f"gs://{BUCKET_NAME}/{filepath}"
+        if exists is True:
+            print(f"Uploaded to GCS: {gcs_path}")
+        else:
+            print(f"Uploaded (verification unavailable) to GCS: {gcs_path}")
+
+        return gcs_path
     except Exception as e:
+        print(f"ERROR uploading to GCS: {filepath} -> {e}", file=sys.stderr)
         raise RuntimeError(f"Failed to upload {filepath} to GCS: {str(e)}")
 
 # Helper function to get json from GCS
@@ -132,7 +147,38 @@ def download_youtube_audio(youtube_url, temp_dir):
     return wav_file, duration, title
 
 # Helper function to split audio into chunks
+def cleanup_old_chunk_dirs(prefix='whisperx_chunks_', max_age_seconds=60):
+    """Remove old temporary chunk directories left from previous runs.
+    Only removes directories older than `max_age_seconds` to avoid interfering
+    with currently running jobs.
+    """
+    tmp_root = tempfile.gettempdir()
+    now = time.time()
+    try:
+        for name in os.listdir(tmp_root):
+            if not name.startswith(prefix):
+                continue
+            path = os.path.join(tmp_root, name)
+            try:
+                mtime = os.path.getmtime(path)
+            except Exception:
+                mtime = now
+            age = now - mtime
+            if age > max_age_seconds and os.path.isdir(path):
+                try:
+                    shutil.rmtree(path)
+                    print(f"Removed stale chunk dir: {path}")
+                except Exception as e:
+                    print(f"Failed to remove stale chunk dir {path}: {e}")
+    except Exception as e:
+        print(f"Error during stale chunk dir cleanup: {e}")
+
 def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
+    # clean up any stale chunk dirs before creating a fresh one
+    cleanup_old_chunk_dirs()
+    temp_dir = tempfile.mkdtemp(prefix="whisperx_chunks_")
+    print(f"Splitting audio into {chunk_length_ms/60000:.1f}-min chunks into {temp_dir}")
+
     try:
         result = subprocess.run([
             'ffprobe', '-v', 'error', '-show_entries', 
@@ -140,61 +186,50 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
             'default=noprint_wrappers=1:nokey=1', audio_path
         ], capture_output=True, text=True, check=True)
         
-        total_duration_seconds = float(result.stdout.strip())
+        total_duration = float(result.stdout.strip()) * 1000
     except Exception as e:
-        print(f"Error getting audio duration: {str(e)}")
-        return [(audio_path, 0, 0)]
-    
-    # check if chunking is needed
-    total_duration_ms = int(total_duration_seconds * 1000)
-    if total_duration_ms <= chunk_length_ms:
-        return [(audio_path, 0, total_duration_ms)]
+        # Clean up temp_dir on failure to avoid leaving junk behind
+        try:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                print(f"Cleaned up chunk temp dir after failure: {temp_dir}")
+        except Exception:
+            pass
+        raise RuntimeError(f"ffprobe failed: {e}")
 
-    num_chunks = math.ceil(total_duration_seconds * 1000 / chunk_length_ms)
-    chunk_length_seconds = chunk_length_ms / 1000
-
-    chunks_info = []
-    temp_dir = os.path.dirname(audio_path)
+    num_chunks = math.ceil(total_duration / chunk_length_ms)
+    print(f"Total duration: {total_duration/1000:.1f}s ({num_chunks} chunks expected)")
 
     # create chunks
+    chunks = []
     for i in range(num_chunks):
-        start_seconds = i * chunk_length_seconds
-        end_seconds = min((i + 1) * chunk_length_seconds, total_duration_seconds)
-        chunk_duration = end_seconds - start_seconds
+        start_ms = i * chunk_length_ms
+        end_ms = min(start_ms + chunk_length_ms, total_duration)
+        out_path = os.path.join(temp_dir, f"chunk_{i:03d}.wav")
 
-        # skip chunks shorter than 1 seconds
-        if chunk_duration < 1:
-            continue
-
-        # create temporary chunk file path
-        chunk_path = os.path.join(temp_dir, f"chunk_{i}.wav")
+        subprocess_cmd = [
+            'ffmpeg', '-y',
+            '-i', audio_path,
+            '-ss', str(start_ms / 1000),
+            '-to', str(end_ms / 1000),
+            '-acodec', 'copy',
+            out_path
+        ]
 
         try:
-            # use ffmpeg to create chunk
-            subprocess.run([
-                'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
-                '-i', audio_path,
-                '-ss', str(start_seconds),
-                '-t', str(chunk_duration),
-                '-ac', '1',
-                '-ar', '16000',
-                '-acodec', 'pcm_s16le',
-                chunk_path
-            ], check=True)
-
-            chunks_info.append((chunk_path, int(start_seconds*1000), int(end_seconds*1000)))
-        except subprocess.CalledProcessError as e:
-            print(f"Error creating chunk {i}: {str(e)} – returning original audio")
-            continue
-
-    if not chunks_info:
-        chunks_info = [(audio_path, 0, int(total_duration_seconds*1000))]
-
-    return chunks_info
+            subprocess.run(subprocess_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            chunks.append((out_path, start_ms / 1000, end_ms / 1000))
+            print(f"   Chunk {i}: {start_ms/1000:.1f}s → {end_ms/1000:.1f}s")
+        except Exception as e:
+            print(f"   Error creating chunk {i}: {e}")
+    
+    print(f"Created {len(chunks)}/{num_chunks} chunks successfully.")
+    # return both the chunk list and the temp directory so callers can clean up
+    return chunks, temp_dir
 
 # Helper function to transcribe audio chunks
-def transcribe_audio_chunks(audio_path, offset_ms=0):
-    print(f"Transcribing audio chunk: {audio_path} (offset: {offset_ms/1000/60:.1f} min)...")
+def transcribe_audio_chunks(audio_path, offset_seconds=0):
+    print(f"Transcribing audio chunk: {audio_path} (offset: {offset_seconds/60:.1f} min)...")
 
     try:
         # run transcription
@@ -224,7 +259,6 @@ def transcribe_audio_chunks(audio_path, offset_ms=0):
         return [], ""
 
     # adjust timestamps w/ offset
-    offset_seconds = offset_ms / 1000.0
     adjusted_segments = []
 
     # for each segment, adjust it and append words
@@ -241,7 +275,6 @@ def transcribe_audio_chunks(audio_path, offset_ms=0):
                 'word': word.get('word', ''),
                 'start': word.get('start', 0) + offset_seconds,
                 'end': word.get('end', 0) + offset_seconds,
-                'probability': word.get('probability')
             })
 
         adjusted_segments.append(adjusted_segment)
@@ -254,9 +287,8 @@ def transcribe_audio_chunks(audio_path, offset_ms=0):
 
 # Helper function to transcribe full audio file using parallel processing
 def transcribe_full_audio_parallel(audio_path):
-    chunks = split_audio(audio_path)
+    chunks, temp_dir = split_audio(audio_path)
     all_segments = []
-    all_text_parts = []
 
     total_chunks = len(chunks)
     completed_chunks = 0
@@ -264,103 +296,123 @@ def transcribe_full_audio_parallel(audio_path):
     print(f"Starting parallel transcription for {total_chunks} chunks")
 
     max_workers = min(4, os.cpu_count() or 1)
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(transcribe_audio_chunks, c[0], c[1]): c for c in chunks}
-        for future in as_completed(futures):
-            chunk_path, _, _ = futures[future]
-            try:
-                segments, text = future.result()
-                all_segments.extend(segments)
-                all_text_parts.append(text)
-            except Exception as e:
-                print(f"Failed processing chunk {futures[future]}: {e}")
-            finally:
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(transcribe_audio_chunks, c[0], c[1]): c for c in chunks}
+            
+            for future in as_completed(futures):
+                chunk_path, _, _ = futures[future]
                 try:
-                    os.remove(chunk_path)
-                    print(f"Removed temporary chunk file: {chunk_path}")
-                except Exception:
-                    print(f"Failed to remove temporary chunk file: {chunk_path}")
-                    pass
+                    segments, text = future.result()
+                    all_segments.extend(segments)
+                except Exception as e:
+                    print(f"Failed processing chunk {futures[future]}: {e}")
+                finally:
+                    try:
+                        if os.path.exists(chunk_path):
+                            os.remove(chunk_path)
+                            print(f"Removed temporary chunk file: {chunk_path}")
+                    except Exception:
+                        print(f"Failed to remove temporary chunk file: {chunk_path}")
+                        pass
 
-            completed_chunks += 1
-            print(f"[Progress] {completed_chunks}/{total_chunks} chunks completed")
+                completed_chunks += 1
+                print(f"[Progress] {completed_chunks}/{total_chunks} chunks completed")
+    finally:
+        # Ensure the chunk directory is removed after processing
+        try:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                print(f"Removed temporary chunk directory: {temp_dir}")
+        except Exception as e:
+            print(f"Failed to remove temporary chunk directory {temp_dir}: {e}")
 
-    full_text = " ".join(part.strip() for part in all_text_parts if part)
-    full_text = re.sub(r'\s+', ' ', full_text)
+        # also try to remove any other stale chunk dirs promptly
+        cleanup_old_chunk_dirs()
 
-    print(f"Full transcription completed, total segments: {len(all_segments)}")
-    return all_segments, full_text
+    sorted_segments = sorted(all_segments, key=lambda s: s.get('start', 0))
+    for idx, segment in enumerate(sorted_segments):
+        segment['id'] = idx
+
+    full_text = " ".join(segment.get('text', '').strip() for segment in sorted_segments if segment.get('text'))
+    full_text = re.sub(r'\s+', ' ', full_text).strip()
+
+    print(f"Full transcription completed, total segments: {len(sorted_segments)}")
+    return sorted_segments, full_text
 
 # Helper function to run a transcription job
-def run_transcription_job(job_id, youtube_url, year, committee, bill_name, video_title, hearing_date, room, ampm, bill_ids):
-        temp_dir = tempfile.mkdtemp()
+def run_transcription_job(job_id, youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        audio_path, duration, title = download_youtube_audio(youtube_url, temp_dir)
+
+        start_time = datetime.now()
+        segments, full_text = transcribe_full_audio_parallel(audio_path)
+        processing_time = (datetime.now() - start_time).total_seconds()
+        committee_slug = '-'.join([sanitize_path(c).replace(' ', '').upper() for c in committee_list]) if committee_list else 'UNKNOWN'
+        hearing_id = f"{year}_{committee_slug}_{bill_name}_{video_title}"
+        folder_path = f"{year}/{committee_slug}/{bill_name}/{video_title}".replace(' ', '_')
+
+        metadata = {
+            'hearing_id': hearing_id,
+            'title': title,
+            'date': hearing_date,
+            'duration': duration,
+            'youtube_url': youtube_url,
+            'year': year,
+            'committee': committee_list,
+            'bill_name': bill_name,
+            'bill_ids': bill_ids,
+            'video_title': video_title,
+            'room': room,
+            'ampm': ampm,
+            'folder_path': folder_path,
+            'created_at': datetime.now().isoformat(),
+        }
+
+        transcript = {
+            'hearing_id': hearing_id,
+            'text': full_text,
+            'language': 'en',
+            'duration': duration,
+            'processing_time': processing_time,
+            'model': MODEL_NAME,
+            'segments': segments if segments else [],
+            'total_segments': len(segments),
+            'created_at': datetime.now().isoformat(),
+        }
+
+        metadata_gcs = upload_to_gcs(metadata, f"{folder_path}/metadata.json")
+        transcript_gcs = upload_to_gcs(transcript, f"{folder_path}/transcript.json")
+
+        print(f"run_transcription_job: metadata_gcs={metadata_gcs}, transcript_gcs={transcript_gcs}")
+
+        return metadata, transcript, folder_path
+    except Exception as e:
+        raise e
+    finally:
+        # Clean up download temp dir
         try:
-            audio_path, duration, title = download_youtube_audio(youtube_url, temp_dir)
-
-            start_time = datetime.now()
-            segments, full_text = transcribe_full_audio_parallel(audio_path)
-            processing_time = (datetime.now() - start_time).total_seconds()
-
-            hearing_id = f"{year}_{committee}_{bill_name}_{video_title}"
-            folder_path = f"{year}/{committee}/{bill_name}/{video_title}".replace(' ', '_')
-
-            metadata = {
-                'hearing_id': hearing_id,
-                'title': title,
-                'date': hearing_date,
-                'duration': duration,
-                'youtube_url': youtube_url,
-                'year': year,
-                'committee': committee,
-                'bill_name': bill_name,
-                'bill_ids': bill_ids,
-                'video_title': video_title,
-                'room': room,
-                'ampm': ampm,
-                'folder_path': folder_path,
-                'created_at': datetime.now().isoformat(),
-            }
-
-            transcript = {
-                'hearing_id': hearing_id,
-                'text': full_text,
-                'language': 'en',
-                'duration': duration,
-                'processing_time': processing_time,
-                'model': MODEL_NAME,
-                'segments': segments if segments else [],
-                'total_segments': len(segments),
-                'created_at': datetime.now().isoformat(),
-            }
-
-            upload_to_gcs(metadata, f"{folder_path}/metadata.json")
-            upload_to_gcs(transcript, f"{folder_path}/transcript.json")
-
-            return metadata, transcript, folder_path
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                print(f"Cleaned up download temp dir: {temp_dir}")
         except Exception as e:
-            raise e
-        finally:
-            for f in Path(temp_dir).glob("*"):
-                try:
-                    f.unlink()
-                except Exception:
-                    pass
-            try:
-                os.rmdir(temp_dir)
-            except Exception:
-                pass
+            print(f"Failed to remove download temp dir {temp_dir}: {e}")
+
+        # also try to remove any other stale chunk dirs promptly
+        cleanup_old_chunk_dirs()
 
 
 # Helper function to handle background transcription jobs
 jobs = {}
 jobs_lock = threading.Lock()
-def background_transcribe(job_id, youtube_url, year, committee, bill_name, video_title, hearing_date, room, ampm, bill_ids):
+def background_transcribe(job_id, youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids):
     try:
         with jobs_lock:
             jobs[job_id] = {'status': 'processing', 'progress': '0/0 chunks completed'}
 
         metadata, transcript, folder_path = run_transcription_job(
-            job_id, youtube_url, year, committee, bill_name, video_title, hearing_date, room, ampm, bill_ids
+            job_id, youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids
         )
 
         with jobs_lock:
@@ -393,7 +445,11 @@ def transcribe():
     data = request.json
     youtube_url = data.get('youtube_url')
     year = sanitize_path(data.get('year', ''))
-    committee = sanitize_path(data.get('committee', ''))
+    raw_committee = data.get('committee', '')
+    if isinstance(raw_committee, list):
+        committee_list = [sanitize_path(c) for c in raw_committee if c]
+    else:
+        committee_list = [sanitize_path(raw_committee)] if raw_committee else []
     bill_name = sanitize_path(data.get('bill_name', ''))
     video_title = sanitize_path(data.get('video_title', ''))
     hearing_date = data.get('hearing_date', datetime.now().strftime('%Y-%m-%d'))
@@ -402,7 +458,7 @@ def transcribe():
     bill_ids = data.get('bill_ids', [])
 
     # validate all fields
-    if not all([youtube_url, year, committee, bill_name, video_title, hearing_date]):
+    if not all([youtube_url, year, committee_list, bill_name, video_title, hearing_date]):
         return jsonify({
             'error': 'Missing required fields',
             'required': ['youtube_url', 'year', 'committee', 'bill_name', 'video_title', 'hearing_date']
@@ -414,7 +470,7 @@ def transcribe():
 
     def run_in_background():
         background_transcribe(
-            job_id, youtube_url, year, committee, bill_name,
+            job_id, youtube_url, year, committee_list, bill_name,
             video_title, hearing_date, room, ampm, bill_ids
         )
 
@@ -460,18 +516,20 @@ def list_transcripts():
     try:
         bucket = storage_client.bucket(BUCKET_NAME)
         blobs = bucket.list_blobs(max_results=1000)
-
         transcripts = []
         seen_folders = set()
-        
+
         for blob in blobs:
             if blob.name.endswith('metadata.json'):
                 folder_path = blob.name.replace('/metadata.json', '')
-                
+
                 if folder_path not in seen_folders:
                     seen_folders.add(folder_path)
-                    metadata = json.loads(blob.download_as_text())
-                    transcripts.append(metadata)
+                    try:
+                        metadata = json.loads(blob.download_as_text())
+                        transcripts.append(metadata)
+                    except Exception as e:
+                        print(f"Warning: failed to read metadata blob {blob.name}: {e}", file=sys.stderr)
 
         return jsonify({
             'transcripts': sorted(transcripts, key=lambda x: x.get('date', ''), reverse=True),

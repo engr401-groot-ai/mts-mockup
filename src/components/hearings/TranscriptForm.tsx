@@ -25,7 +25,7 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
     const [youtubeUrl, setYoutubeUrl] = useState('');
     const [hearingDate, setHearingDate] = useState('');
     const [chamber, setChamber] = useState<Chamber>('');
-    const [committee, setCommittee] = useState('');
+    const [committee, setCommittee] = useState<string[]>([]);
     const [billIds, setBillIds] = useState('');
     const [room, setRoom] = useState('');
     const [ampm, setAmpm] = useState<'AM' | 'PM'>('AM');
@@ -42,12 +42,12 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
     const availableCommittees = useMemo(() => getCommitteesByChamber(chamber), [chamber]);
 
     const hearingId = useMemo(() => {
-        if (!hearingDate || !committee || !billIds || !room) return '';
+        if (!hearingDate || (Array.isArray(committee) ? committee.length === 0 : !committee) || !billIds || !room) return '';
         return generateHearingId(hearingDate, committee, billIds, room, ampm);
     }, [hearingDate, committee, billIds, room, ampm]);
 
     const folderPath = useMemo(() => {
-        if (!hearingDate || !committee || !billIds || !title) return '';
+        if (!hearingDate || (Array.isArray(committee) ? committee.length === 0 : !committee) || !billIds || !title) return '';
         return generateFolderPath(hearingDate, committee, billIds, title);
     }, [hearingDate, committee, billIds, title]);
 
@@ -100,7 +100,7 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                 setYoutubeUrl('');
                 setHearingDate('');
                 setChamber('');
-                setCommittee('');
+                setCommittee([]);
                 setBillIds('');
                 setRoom('');
                 setAmpm('AM');
@@ -130,7 +130,19 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
 
     const handleChamberChange = (newChamber: Chamber) => {
         setChamber(newChamber);
-        setCommittee('');
+        setCommittee([]);
+    };
+
+    const [selectedCommitteeOption, setSelectedCommitteeOption] = useState('');
+
+    const addSelectedCommittee = (comm: string) => {
+        if (!comm) return;
+        setCommittee(prev => (prev.includes(comm) ? prev : [...prev, comm]));
+        setSelectedCommitteeOption('');
+    };
+
+    const removeCommittee = (comm: string) => {
+        setCommittee(prev => prev.filter(c => c !== comm));
     };
 
     const inputDisabled = transcribing;
@@ -220,23 +232,52 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                         {errors.chamber && <p className="text-red-500 text-xs mt-1">{errors.chamber}</p>}
                     </div>
 
-                    <div>
-                        <label htmlFor="committee" className="block text-sm font-medium mb-2">
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-2">
                             Committee <span className="text-red-500">*</span>
                         </label>
-                        <select
-                            id="committee"
-                            value={committee}
-                            onChange={(e) => setCommittee(e.target.value)}
-                            className={`border rounded px-3 py-2 w-full ${errors.committee ? 'border-red-500' : 'border-gray-300'}`}
-                            required
-                            disabled={!chamber || inputDisabled}
-                        >
-                            <option value="">{chamber ? 'Select a committee...' : 'Select chamber first...'}</option>
-                            {availableCommittees.map(comm => (
-                                <option key={comm} value={comm}>{comm}</option>
-                            ))}
-                        </select>
+                        <div className="space-y-2">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                                <div className="md:col-span-1">
+                                    <select
+                                        id="committee"
+                                        value={selectedCommitteeOption}
+                                        onChange={(e) => addSelectedCommittee(e.target.value)}
+                                        className={`border rounded px-3 py-2 w-full ${errors.committee ? 'border-red-500' : 'border-gray-300'}`}
+                                        disabled={!chamber || inputDisabled}
+                                    >
+                                        <option value="">{chamber ? 'Add a committee...' : 'Select chamber first...'}</option>
+                                        {availableCommittees.map(comm => (
+                                            <option key={comm} value={comm}>{comm}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="md:col-span-2 flex justify-end">
+                                    <div className="h-12 bg-gray-100 border border-gray-200 rounded px-2 flex items-center w-full">
+                                        {committee.length === 0 ? (
+                                            <div className="w-full text-center text-sm text-gray-500">No committees selected</div>
+                                        ) : (
+                                            <div className="flex gap-2 overflow-x-auto py-1 pl-1">
+                                                {committee.map(comm => (
+                                                    <span key={comm} className="inline-flex items-center bg-white px-2 py-1 rounded-full border flex-shrink-0">
+                                                        <span className="text-sm mr-2">{comm}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeCommittee(comm)}
+                                                            aria-label={`Remove ${comm}`}
+                                                            className="text-xs text-gray-500 hover:text-gray-800"
+                                                            disabled={inputDisabled}
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         {errors.committee && <p className="text-red-500 text-xs mt-1">{errors.committee}</p>}
                     </div>
                 </div>
@@ -260,7 +301,7 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                     {errors.billIds && <p className="text-red-500 text-xs mt-1">{errors.billIds}</p>}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
                     <div className="md:col-span-2">
                         <label htmlFor="room" className="block text-sm font-medium mb-2">
                             Room <span className="text-red-500">*</span>

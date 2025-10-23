@@ -30,7 +30,7 @@ export interface Metadata {
     duration: number;
     youtube_url: string;
     year: string;
-    committee: string;
+    committee: string | string[];
     bill_name: string;
     bill_ids?: string[];
     video_title: string;
@@ -70,7 +70,7 @@ export interface PythonAPIResponse {
 export interface TranscriptionRequest {
     youtube_url: string;
     year: string;
-    committee: string;
+    committee: string | string[];
     bill_name: string;
     bill_ids?: string[];
     video_title: string;

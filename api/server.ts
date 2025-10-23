@@ -52,32 +52,32 @@ function formatTranscriptResponse(data: PythonAPIResponse): ClientResponse {
 app.post('/api/transcribe', async (req: Request, res: Response) => {
     const { youtube_url, year, committee, bill_name, bill_ids, video_title, hearing_date, room, ampm } = req.body;
 
-    // Validate required fields
-    const validatedHearingDate = hearing_date || new Date().toISOString().split('T')[0];
-    if (!youtube_url || !year || !committee || !bill_name || !video_title) {
-        console.log('Validation failed:', { youtube_url: !!youtube_url, year: !!year, committee: !!committee, bill_name: !!bill_name, video_title: !!video_title });
+  const validatedHearingDate = hearing_date || new Date().toISOString().split('T')[0];
+  const hasCommittee = Array.isArray(committee) ? committee.length > 0 : !!committee;
+  if (!youtube_url || !year || !hasCommittee || !bill_name || !video_title) {
+    console.log('Validation failed:', { youtube_url: !!youtube_url, year: !!year, hasCommittee, bill_name: !!bill_name, video_title: !!video_title });
         
-        return res.status(400).json({ 
-            error: 'Missing required fields',
-            required: ['youtube_url', 'year', 'committee', 'bill_name', 'video_title', 'hearing_date'],
-            received: { youtube_url, year, committee, bill_name, video_title, hearing_date }
-        });
-    }
+    return res.status(400).json({ 
+      error: 'Missing required fields',
+      required: ['youtube_url', 'year', 'committee', 'bill_name', 'video_title', 'hearing_date'],
+      received: { youtube_url, year, committee, bill_name, video_title, hearing_date }
+    });
+  }
 
     try {
         console.log('Transcribing:', { year, committee, bill_name, video_title });
 
-        const requestPayload: TranscriptionRequest = {
-            youtube_url: youtube_url,
-            year: year,
-            committee: committee,
-            bill_name: bill_name,
-            bill_ids: bill_ids,
-            video_title: video_title,
-            hearing_date: hearing_date || new Date().toISOString().split('T')[0],
-            room: room,
-            ampm: ampm
-        };
+    const requestPayload: TranscriptionRequest = {
+      youtube_url: youtube_url,
+      year: year,
+      committee: committee,
+      bill_name: bill_name,
+      bill_ids: bill_ids,
+      video_title: video_title,
+      hearing_date: hearing_date || new Date().toISOString().split('T')[0],
+      room: room,
+      ampm: ampm
+    };
 
         const response = await axios.post<PythonAPIResponse>(
             `${PYTHON_API_URL}/transcribe`, 
@@ -125,28 +125,38 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
 
 // Get endpoint to retrieve a specific transcripts
 app.get('/api/transcript/:year/:committee/:billName/:videoTitle', async (req: Request, res: Response) => {
-    const { year, committee, billName, videoTitle } = req.params;
-    const folderPath = `${year}/${committee}/${billName}/${videoTitle}`;
-    const encodedFolderPath = encodeURIComponent(folderPath).replace(/%2F/g, '/');
+  const { year, committee, billName, videoTitle } = req.params;
 
-    try {
-        const response = await axios.get<PythonAPIResponse>(
-          `${PYTHON_API_URL}/transcript/${encodedFolderPath}`
-        );
+  const normalizeCommittee = (c: string | undefined) => {
+    if (!c) return 'UNKNOWN';
+    const parts = String(c).split(/[,\-]+/).map(p => p.trim()).filter(Boolean);
+    if (parts.length === 0) return 'UNKNOWN';
+    return parts.map(p => p.replace(/\s+/g, '').toUpperCase()).join('-');
+  };
 
-        console.log('Retrieved:', response.data.metadata?.title);
+  const committeeSlug = normalizeCommittee(committee);
+  const folderPath = `${year}/${committeeSlug}/${billName}/${videoTitle}`;
+  const encodedFolderPath = encodeURI(folderPath);
 
-        const formattedResponse = formatTranscriptResponse(response.data);
+  console.log('GET /api/transcript -> folderPath:', folderPath, 'encoded:', encodedFolderPath);
 
-        res.json(formattedResponse);
-    } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
-            res.status(404).json({ error: 'Transcript not found' });
-        } else {
-            console.error('Error fetching transcript:', error);
-            res.status(500).json({ error: 'Failed to fetch transcript' });
-        }
+  try {
+    const response = await axios.get<PythonAPIResponse>(
+      `${PYTHON_API_URL}/transcript/${encodedFolderPath}`
+    );
+
+    console.log('Retrieved:', response.data.metadata?.title);
+
+    const formattedResponse = formatTranscriptResponse(response.data);
+    res.json(formattedResponse);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      res.status(404).json({ error: 'Transcript not found' });
+    } else {
+      console.error('Error fetching transcript:', error);
+      res.status(500).json({ error: 'Failed to fetch transcript' });
     }
+  }
 });
 
 // Get endpoint to list all transcripts
