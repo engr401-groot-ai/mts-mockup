@@ -1,19 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { toast } from '@/hooks/use-toast';
 import type { TranscriptionRequest } from '../../types/hearings';
-import { 
-    validateBillIds, 
-    validateTranscriptForm, 
-    generateHearingId, 
+import {
+    validateBillIds,
+    validateTranscriptForm,
+    generateHearingId,
     generateFolderPath,
-    sanitizeForPath 
+    sanitizeForPath,
 } from '../../lib/transcriptUtils';
-import { 
-    getCommitteesByChamber, 
-    type Chamber 
-} from '../../lib/constants/committees';
+import { getCommitteesByChamber, type Chamber } from '../../lib/constants/committees';
 
 interface TranscriptFormProps {
-    onSubmit: (data: TranscriptionRequest) => Promise<void>;
+    onSubmit: (data: TranscriptionRequest) => Promise<any>;
     onCancel?: () => void;
 }
 
@@ -28,7 +26,7 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
     const [youtubeUrl, setYoutubeUrl] = useState('');
     const [hearingDate, setHearingDate] = useState('');
     const [chamber, setChamber] = useState<Chamber>('');
-    const [committee, setCommittee] = useState('');
+    const [committee, setCommittee] = useState<string[]>([]);
     const [billIds, setBillIds] = useState('');
     const [room, setRoom] = useState('');
     const [ampm, setAmpm] = useState<'AM' | 'PM'>('AM');
@@ -36,48 +34,38 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
     const [transcribing, setTranscribing] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
-    // Filter committees based on selected chamber
+    const [jobId, setJobId] = useState<string | null>(null);
+    const [progressPercent, setProgressPercent] = useState<number>(0);
+    const [queuedFolderPath, setQueuedFolderPath] = useState<string | null>(null);
+
     const availableCommittees = useMemo(() => getCommitteesByChamber(chamber), [chamber]);
 
-    // Auto-generate hearing ID for preview
     const hearingId = useMemo(() => {
-        if (!hearingDate || !committee || !billIds || !room) {
-            return '';
-        }
+        if (!hearingDate || (Array.isArray(committee) ? committee.length === 0 : !committee) || !billIds || !room) return '';
         return generateHearingId(hearingDate, committee, billIds, room, ampm);
     }, [hearingDate, committee, billIds, room, ampm]);
 
-    // Auto-generate GCS folder path for preview
     const folderPath = useMemo(() => {
-        if (!hearingDate || !committee || !billIds || !title) {
-            return '';
-        }
+        if (!hearingDate || (Array.isArray(committee) ? committee.length === 0 : !committee) || !billIds || !title) return '';
         return generateFolderPath(hearingDate, committee, billIds, title);
     }, [hearingDate, committee, billIds, title]);
 
     const validateForm = (): boolean => {
-        const newErrors = validateTranscriptForm({
-            youtubeUrl,
-            hearingDate,
-            chamber,
-            committee,
-            billIds,
-            room,
-            title
-        });
-
+        const newErrors = validateTranscriptForm({ youtubeUrl, hearingDate, chamber, committee, billIds, room, title });
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!validateForm()) return; 
 
-        if (!validateForm()) {
-            return;
-        }
+    setTranscribing(true);
+    setJobId(null);
+    setQueuedFolderPath(null);
+    setProgressPercent(0);
 
-        setTranscribing(true);
+        let startedBackgroundJob = false;
 
         try {
             const billValidation = validateBillIds(billIds);
@@ -87,35 +75,46 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
 
             const data: TranscriptionRequest = {
                 youtube_url: youtubeUrl,
-                year: year,
-                committee: committee,
+                year,
+                committee,
                 bill_name: billName,
                 bill_ids: billValidation.normalized,
                 video_title: videoTitle,
                 hearing_date: hearingDate,
-                room: room,
-                ampm: ampm
+                room,
+                ampm,
             };
 
-            await onSubmit(data);
+            const startResult = await onSubmit(data);
 
-            // Clear form on success
-            setYoutubeUrl('');
-            setHearingDate('');
-            setChamber('');
-            setCommittee('');
-            setBillIds('');
-            setRoom('');
-            setAmpm('AM');
-            setTitle('');
-            setErrors({});
+            if (startResult?.folder_path) {
+                startedBackgroundJob = true;
+                setQueuedFolderPath(startResult.folder_path);
+                setProgressPercent(0);
+            } else if (startResult?.transcript) {
+                setProgressPercent(100);
+                setYoutubeUrl('');
+                setHearingDate('');
+                setChamber('');
+                setCommittee([]);
+                setBillIds('');
+                setRoom('');
+                setAmpm('AM');
+                setTitle('');
+                setErrors({});
+                toast({
+                    title: 'Transcription completed',
+                    description: 'Transcription completed successfully!',
+                    duration: 4000,
+                });
+                window.dispatchEvent(new Event('transcript-updated'));
+            }
         } catch (err) {
             console.error('Form submission error:', err);
-            
             const errorMessage = err instanceof Error ? err.message : 'Failed to create transcript';
             setErrors(prev => ({ ...prev, submit: errorMessage }));
         } finally {
-            setTranscribing(false);
+            if (!startedBackgroundJob) setTranscribing(false);
         }
     };
 
@@ -129,8 +128,23 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
 
     const handleChamberChange = (newChamber: Chamber) => {
         setChamber(newChamber);
-        setCommittee('');
+        setCommittee([]);
     };
+
+    const [selectedCommitteeOption, setSelectedCommitteeOption] = useState('');
+
+    const addSelectedCommittee = (comm: string) => {
+        if (!comm) return;
+        setCommittee(prev => (prev.includes(comm) ? prev : [...prev, comm]));
+        setSelectedCommitteeOption('');
+    };
+
+    const removeCommittee = (comm: string) => {
+        setCommittee(prev => prev.filter(c => c !== comm));
+    };
+
+    const inputDisabled = transcribing;
+
 
     return (
         <div className="bg-white border rounded-lg p-6 mb-6 shadow-sm">
@@ -148,10 +162,9 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                             onChange={(e) => setHearingDate(e.target.value)}
                             className={`border rounded px-3 py-2 w-full ${errors.hearingDate ? 'border-red-500' : 'border-gray-300'}`}
                             required
+                            disabled={inputDisabled}
                         />
-                        {errors.hearingDate && (
-                            <p className="text-red-500 text-xs mt-1">{errors.hearingDate}</p>
-                        )}
+                        {errors.hearingDate && <p className="text-red-500 text-xs mt-1">{errors.hearingDate}</p>}
                     </div>
 
                     <div>
@@ -164,38 +177,62 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                             onChange={(e) => handleChamberChange(e.target.value as Chamber)}
                             className={`border rounded px-3 py-2 w-full ${errors.chamber ? 'border-red-500' : 'border-gray-300'}`}
                             required
+                            disabled={inputDisabled}
                         >
                             <option value="">Select chamber...</option>
                             <option value="House">House</option>
                             <option value="Senate">Senate</option>
                         </select>
-                        {errors.chamber && (
-                            <p className="text-red-500 text-xs mt-1">{errors.chamber}</p>
-                        )}
+                        {errors.chamber && <p className="text-red-500 text-xs mt-1">{errors.chamber}</p>}
                     </div>
 
-                    <div>
-                        <label htmlFor="committee" className="block text-sm font-medium mb-2">
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-2">
                             Committee <span className="text-red-500">*</span>
                         </label>
-                        <select
-                            id="committee"
-                            value={committee}
-                            onChange={(e) => setCommittee(e.target.value)}
-                            className={`border rounded px-3 py-2 w-full ${errors.committee ? 'border-red-500' : 'border-gray-300'}`}
-                            required
-                            disabled={!chamber}
-                        >
-                            <option value="">
-                                {chamber ? 'Select a committee...' : 'Select chamber first...'}
-                            </option>
-                            {availableCommittees.map(comm => (
-                                <option key={comm} value={comm}>{comm}</option>
-                            ))}
-                        </select>
-                        {errors.committee && (
-                            <p className="text-red-500 text-xs mt-1">{errors.committee}</p>
-                        )}
+                        <div className="space-y-2">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                                <div className="md:col-span-1">
+                                    <select
+                                        id="committee"
+                                        value={selectedCommitteeOption}
+                                        onChange={(e) => addSelectedCommittee(e.target.value)}
+                                        className={`border rounded px-3 py-2 w-full ${errors.committee ? 'border-red-500' : 'border-gray-300'}`}
+                                        disabled={!chamber || inputDisabled}
+                                    >
+                                        <option value="">{chamber ? 'Add a committee...' : 'Select chamber first...'}</option>
+                                        {availableCommittees.map(comm => (
+                                            <option key={comm} value={comm}>{comm}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="md:col-span-2 flex justify-end">
+                                    <div className="h-12 bg-gray-100 border border-gray-200 rounded px-2 flex items-center w-full">
+                                        {committee.length === 0 ? (
+                                            <div className="w-full text-center text-sm text-gray-500">No committees selected</div>
+                                        ) : (
+                                            <div className="flex gap-2 overflow-x-auto py-1 pl-1">
+                                                {committee.map(comm => (
+                                                    <span key={comm} className="inline-flex items-center bg-white px-2 py-1 rounded-full border flex-shrink-0">
+                                                        <span className="text-sm mr-2">{comm}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeCommittee(comm)}
+                                                            aria-label={`Remove ${comm}`}
+                                                            className="text-xs text-gray-500 hover:text-gray-800"
+                                                            disabled={inputDisabled}
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {errors.committee && <p className="text-red-500 text-xs mt-1">{errors.committee}</p>}
                     </div>
                 </div>
 
@@ -213,13 +250,12 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                         className={`border rounded px-3 py-2 w-full ${errors.billIds ? 'border-red-500' : 'border-gray-300'}`}
                         placeholder="HB1168, SB2024"
                         required
+                        disabled={inputDisabled}
                     />
-                    {errors.billIds && (
-                        <p className="text-red-500 text-xs mt-1">{errors.billIds}</p>
-                    )}
+                    {errors.billIds && <p className="text-red-500 text-xs mt-1">{errors.billIds}</p>}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
                     <div className="md:col-span-2">
                         <label htmlFor="room" className="block text-sm font-medium mb-2">
                             Room <span className="text-red-500">*</span>
@@ -232,10 +268,9 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                             className={`border rounded px-3 py-2 w-full ${errors.room ? 'border-red-500' : 'border-gray-300'}`}
                             placeholder="e.g., Room 229, Senate Chamber"
                             required
+                            disabled={inputDisabled}
                         />
-                        {errors.room && (
-                            <p className="text-red-500 text-xs mt-1">{errors.room}</p>
-                        )}
+                        {errors.room && <p className="text-red-500 text-xs mt-1">{errors.room}</p>}
                     </div>
 
                     <div>
@@ -248,6 +283,7 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                             onChange={(e) => setAmpm(e.target.value as 'AM' | 'PM')}
                             className="border border-gray-300 rounded px-3 py-2 w-full"
                             required
+                            disabled={inputDisabled}
                         >
                             <option value="AM">AM</option>
                             <option value="PM">PM</option>
@@ -268,10 +304,9 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                         className={`border rounded px-3 py-2 w-full ${errors.title ? 'border-red-500' : 'border-gray-300'}`}
                         placeholder="Morning Session"
                         required
+                        disabled={inputDisabled}
                     />
-                    {errors.title && (
-                        <p className="text-red-500 text-xs mt-1">{errors.title}</p>
-                    )}
+                    {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title}</p>}
                 </div>
 
                 <div>
@@ -286,10 +321,9 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                         className={`border rounded px-3 py-2 w-full ${errors.youtubeUrl ? 'border-red-500' : 'border-gray-300'}`}
                         placeholder="https://www.youtube.com/watch?v=..."
                         required
+                        disabled={inputDisabled}
                     />
-                    {errors.youtubeUrl && (
-                        <p className="text-red-500 text-xs mt-1">{errors.youtubeUrl}</p>
-                    )}
+                    {errors.youtubeUrl && <p className="text-red-500 text-xs mt-1">{errors.youtubeUrl}</p>}
                 </div>
 
                 {hearingId && (

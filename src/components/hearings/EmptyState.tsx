@@ -1,3 +1,9 @@
+/**
+ * EmptyState
+ *
+ * Generic empty-state UI used when lists are empty. Shows an optional
+ * action button when `onAction` is provided.
+ */
 import React from 'react';
 
 interface EmptyStateProps {

@@ -1,3 +1,8 @@
+/**
+ * LoadingState
+ *
+ * Small reusable component to show a loading message or short status.
+ */
 import React from 'react';
 
 interface LoadingStateProps {

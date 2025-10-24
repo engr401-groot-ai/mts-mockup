@@ -2,11 +2,19 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import type { TranscriptListItem } from '../../types/hearings';
 import { formatDateTime, formatDuration } from '../../lib/formatUtils';
+import { committeeToSlug } from '../../lib/transcriptUtils';
 
 interface TranscriptTableProps {
     transcripts: TranscriptListItem[];
 }
 
+
+/**
+ * TranscriptTable
+ *
+ * Simple tabular list of transcripts used where a compact, sortable view
+ * is preferred over the hierarchical tree view.
+ */
 const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
     if (transcripts.length === 0) {
         return null;
@@ -32,7 +40,15 @@ const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
                                 {transcript.title}
                             </td>
                             <td className="px-4 py-3 text-sm">
-                                {transcript.committee}
+                                {Array.isArray(transcript.committee) ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        {transcript.committee.map((c, i) => (
+                                            <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded-full border">{c}</span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    transcript.committee
+                                )}
                             </td>
                             <td className="px-4 py-3 text-sm font-mono">
                                 {transcript.bill_name}
@@ -45,7 +61,7 @@ const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
                             </td>
                             <td className="px-4 py-3">
                                 <Link
-                                    to={`/hearing/${transcript.year}/${transcript.committee}/${transcript.bill_name}/${transcript.video_title}`}
+                                    to={`/hearing/${transcript.year}/${committeeToSlug(transcript.committee)}/${transcript.bill_name}/${transcript.video_title}`}
                                     className="text-blue-600 hover:underline text-sm"
                                 >
                                     View Transcript

@@ -1,3 +1,9 @@
+/**
+ * TranscriptDownload
+ *
+ * UI widget that shows transcript metadata (segment count) and a download
+ * action to save the transcript as a text file.
+ */
 import React from 'react';
 import { Download } from 'lucide-react';
 

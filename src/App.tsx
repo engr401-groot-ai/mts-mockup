@@ -16,17 +16,20 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<Navigate to="/mts-mockup" replace />} />
-            <Route path="/mts-mockup" element={<MtsMockup />} />
-            <Route path="/hearings/" element={<Hearings />} />
-            <Route path="/hearing/:year/:committee/:billName/:videoTitle" element={<HearingTranscript />} />
-            <Route path="*" element={<NotFound />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Navigate to="/mts-mockup" replace />} />
+              <Route path="/mts-mockup" element={<MtsMockup />} />
+              <Route path="/hearings/" element={<Hearings />} />
+              <Route
+                path="/hearing/:year/:committee/:billName/:videoTitle"
+                element={<HearingTranscript />}
+              />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );

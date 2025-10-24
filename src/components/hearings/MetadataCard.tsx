@@ -31,7 +31,16 @@ const MetadataCard: React.FC<MetadataCardProps> = ({ metadata, fullTextLength })
                         </div>
                         <div className="flex items-center gap-2 text-gray-600">
                             <Building2 className="w-4 h-4" />
-                            <span className="text-sm">Committee: {metadata.committee}</span>
+                            <span className="text-sm">Committee: </span>
+                            <div className="flex items-center gap-2">
+                                {Array.isArray(metadata.committee) ? (
+                                    metadata.committee.map((c, i) => (
+                                        <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded-full border">{c}</span>
+                                    ))
+                                ) : (
+                                    <span className="text-sm">{metadata.committee}</span>
+                                )}
+                            </div>
                         </div>
                     </div>
 

@@ -19,7 +19,15 @@ export const formatDate = (
       day: 'numeric',
       ...options
     };
-    return new Date(dateString).toLocaleDateString('en-US', defaultOptions);
+    const plainDateMatch = typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/);
+    const dateObj = plainDateMatch
+      ? (() => {
+          const [y, m, d] = dateString.split('-').map(Number);
+          return new Date(y, m - 1, d);
+        })()
+      : new Date(dateString);
+
+    return dateObj.toLocaleDateString('en-US', defaultOptions);
   } catch {
     return dateString;
   }

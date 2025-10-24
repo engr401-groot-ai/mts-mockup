@@ -14,27 +14,36 @@ export interface BillValidationResult {
  * Normalizes a bill ID to standard format (e.g., "HB 1234" -> "HB1234")
  */
 export const normalizeBillId = (billId: string): string => {
-    const normalized = billId.trim().toUpperCase().replace(/\s+/g, '');
+    const raw = billId.trim().toUpperCase();
+    if (raw === 'INFO') return 'INFO';
+    const normalized = raw.replace(/\s+/g, '');
     const match = normalized.match(/^(HB|SB)(\d+)$/);
     return match ? `${match[1]}${match[2]}` : normalized;
 };
 
 /**
- * Validates and normalizes a comma-separated list of bill IDs
+ * Validates and normalizes a list of bill IDs.
+ * Accepts comma-separated or whitespace-separated tokens. The special token
+ * "INFO" is allowed (case-insensitive) and returned as "INFO".
  */
 export const validateBillIds = (input: string): BillValidationResult => {
     if (!input.trim()) {
         return { valid: false, normalized: [], errors: ['At least one bill ID is required'] };
     }
 
-    const billArray = input.split(',').map(b => b.trim()).filter(b => b);
+    const billArray = input.split(/[\s,]+/).map(b => b.trim()).filter(b => b);
     const normalized: string[] = [];
     const errors: string[] = [];
 
     billArray.forEach(bill => {
         const norm = normalizeBillId(bill);
+        if (norm === 'INFO') {
+            normalized.push(norm);
+            return;
+        }
+
         if (!/^(HB|SB)\d+$/.test(norm)) {
-            errors.push(`Invalid format: "${bill}" (must be HB#### or SB####)`);
+            errors.push(`Invalid format: "${bill}" (must be HB#### or SB#### or INFO)`);
         } else {
             normalized.push(norm);
         }
@@ -48,11 +57,28 @@ export const validateBillIds = (input: string): BillValidationResult => {
 };
 
 /**
+ * Normalize committee (string or string[]) into a URL/slug-friendly uppercase hyphen-joined string.
+ * Examples:
+ *  - ['HED','LAB'] => 'HED-LAB'
+ *  - 'HOU, LBT' => 'HOU-LBT'
+ *  - 'HOU-LBT' => 'HOU-LBT'
+ */
+export const committeeToSlug = (committee: string | string[] | undefined): string => {
+    if (!committee) return 'UNKNOWN';
+    if (Array.isArray(committee)) {
+        return committee.map(c => String(c).trim().replace(/\s+/g, '').toUpperCase()).join('-');
+    }
+    const parts = String(committee).split(/[,\-]+/).map(p => p.trim()).filter(Boolean);
+    if (parts.length > 1) return parts.map(p => p.replace(/\s+/g, '').toUpperCase()).join('-');
+    return String(committee).trim().replace(/\s+/g, '-').toUpperCase();
+};
+
+/**
  * Generates a hearing ID from form data
  */
 export const generateHearingId = (
     hearingDate: string,
-    committee: string,
+    committee: string | string[],
     billIds: string,
     room: string,
     ampm: string
@@ -63,12 +89,13 @@ export const generateHearingId = (
     }
 
     const date = hearingDate;
-    const comm = committee.toLowerCase().replace(/\s+/g, '');
+    const comm = committeeToSlug(committee);
     const bills = validation.normalized.join('_');
     const roomSlug = room.toLowerCase().replace(/\s+/g, '');
     const period = ampm.toLowerCase();
 
-    return `${date}_${comm}_${bills}_${roomSlug}_${period}`;
+    const billsSlug = validation.normalized.join('-');
+    return `${date}_${comm}_${billsSlug}_${roomSlug}_${period}`;
 };
 
 /**
@@ -76,7 +103,7 @@ export const generateHearingId = (
  */
 export const generateFolderPath = (
     hearingDate: string,
-    committee: string,
+    committee: string | string[],
     billIds: string,
     title: string
 ): string => {
@@ -86,7 +113,7 @@ export const generateFolderPath = (
     }
 
     const year = hearingDate.split('-')[0];
-    const comm = committee.replace(/\s+/g, '_');
+    const comm = committeeToSlug(committee);
     const bills = validation.normalized.join('_');
     const titleSlug = title.trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '_');
 
@@ -114,7 +141,7 @@ export const validateTranscriptForm = (data: {
     youtubeUrl: string;
     hearingDate: string;
     chamber: string;
-    committee: string;
+    committee: string | string[];
     billIds: string;
     room: string;
     title: string;
@@ -135,7 +162,8 @@ export const validateTranscriptForm = (data: {
         errors.chamber = 'Chamber is required';
     }
 
-    if (!data.committee) {
+    const hasCommittee = Array.isArray(data.committee) ? data.committee.length > 0 : !!data.committee;
+    if (!hasCommittee) {
         errors.committee = 'Committee is required';
     }
 
