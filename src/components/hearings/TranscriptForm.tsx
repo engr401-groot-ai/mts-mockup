@@ -34,10 +34,8 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     const [jobId, setJobId] = useState<string | null>(null);
-    const [jobStatus, setJobStatus] = useState<string | null>(null);
     const [progressPercent, setProgressPercent] = useState<number>(0);
-    const pollingRef = useRef<number | null>(null);
-    const alertedRef = useRef<boolean>(false);
+    const [queuedFolderPath, setQueuedFolderPath] = useState<string | null>(null);
 
     const availableCommittees = useMemo(() => getCommitteesByChamber(chamber), [chamber]);
 
@@ -61,10 +59,10 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
         e.preventDefault();
         if (!validateForm()) return;
 
-        setTranscribing(true);
-        setJobStatus('Starting...');
-        setJobId(null);
-        setProgressPercent(0);
+    setTranscribing(true);
+    setJobId(null);
+    setQueuedFolderPath(null);
+    setProgressPercent(0);
 
         let startedBackgroundJob = false;
 
@@ -88,14 +86,11 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
 
             const startResult = await onSubmit(data);
 
-            if (startResult?.job_id) {
+            if (startResult?.folder_path) {
                 startedBackgroundJob = true;
-                setJobId(startResult.job_id);
-                setJobStatus(startResult.status ?? 'queued');
+                setQueuedFolderPath(startResult.folder_path);
                 setProgressPercent(0);
-                alertedRef.current = false;
             } else if (startResult?.transcript) {
-                setJobStatus('completed');
                 setProgressPercent(100);
                 setYoutubeUrl('');
                 setHearingDate('');
@@ -109,7 +104,7 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                 try { alert('Transcription completed successfully!'); } catch (e) {}
                 window.dispatchEvent(new Event('transcript-updated'));
             } else {
-                setJobStatus('queued');
+                // fallback: treat as queued
             }
         } catch (err) {
             console.error('Form submission error:', err);
@@ -147,50 +142,49 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
 
     const inputDisabled = transcribing;
 
-    useEffect(() => {
-        if (!jobId) return;
+    const parseFolderPath = (folderPath: string) => {
+        const parts = folderPath.split('/');
+        if (parts.length < 4) return null;
+        const [year, committeeSlug, billName, ...rest] = parts;
+        const videoTitle = rest.join('/');
+        return { year, committeeSlug, billName, videoTitle };
+    };
 
-        let cancelled = false;
+    const checkTranscript = async (folderPath: string) => {
+        const parts = parseFolderPath(folderPath);
+        if (!parts) {
+            try { alert('Invalid folder path'); } catch (e) {}
+            return;
+        }
 
-        const poll = async () => {
-            try {
-                const res = await fetch(`http://localhost:3001/api/job-status/${encodeURIComponent(jobId)}`);
-                if (!res.ok) return;
+        try {
+            const res = await fetch(`/api/transcript/${encodeURIComponent(parts.year)}/${encodeURIComponent(parts.committeeSlug)}/${encodeURIComponent(parts.billName)}/${encodeURIComponent(parts.videoTitle)}`);
+            if (res.status === 200) {
                 const data = await res.json();
-                if (cancelled) return;
-
-                setJobStatus(data.status ?? jobStatus);
-                if (typeof data.progress === 'number') setProgressPercent(data.progress);
-
-                if ((data.status === 'completed' || data.status === 'failed') && !alertedRef.current) {
-                    alertedRef.current = true;
-                    setTranscribing(false);
-                    setJobId(null);
-                    if (data.status === 'completed') {
-                        try { alert('Transcription completed successfully!'); } catch (e) {}
-                        window.dispatchEvent(new Event('transcript-updated'));
-                    } else {
-                        try { alert('Transcription failed. Please check logs.'); } catch (e) {}
-                    }
-                    return;
-                }
-            } catch (err) {
-                console.warn('Job poll error', err);
+                setTranscribing(false);
+                setQueuedFolderPath(null);
+                // reset form
+                setYoutubeUrl('');
+                setHearingDate('');
+                setChamber('');
+                setCommittee([]);
+                setBillIds('');
+                setRoom('');
+                setAmpm('AM');
+                setTitle('');
+                setErrors({});
+                try { alert('Transcript ready!'); } catch (e) {}
+                window.dispatchEvent(new Event('transcript-updated'));
+            } else if (res.status === 404) {
+                try { alert('Transcript not ready yet — try again later'); } catch (e) {}
+            } else {
+                try { alert('Error checking transcript'); } catch (e) {}
             }
-
-            if (!cancelled) pollingRef.current = window.setTimeout(poll, 5000);
-        };
-
-        poll();
-
-        return () => {
-            cancelled = true;
-            if (pollingRef.current) {
-                clearTimeout(pollingRef.current);
-                pollingRef.current = null;
-            }
-        };
-    }, [jobId]);
+        } catch (err) {
+            console.error('Check transcript error', err);
+            try { alert('Failed to check transcript'); } catch (e) {}
+        }
+    };
 
     return (
         <div className="bg-white border rounded-lg p-6 mb-6 shadow-sm">
@@ -412,16 +406,6 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                     <div className="bg-red-50 border border-red-200 rounded p-4 text-sm text-red-800">
                         <p className="font-semibold">Error:</p>
                         <p className="mt-1">{errors.submit}</p>
-
-                        <div className="mt-3">
-                            <div className="w-full bg-gray-200 rounded h-3 overflow-hidden">
-                                <div className="bg-blue-500 h-3 rounded" style={{ width: `${progressPercent}%`, transition: 'width 400ms ease' }} />
-                            </div>
-                            <p className="text-xs mt-2 text-gray-700">
-                                {jobStatus ? `${jobStatus}` : 'Queued'}{progressPercent ? ` — ${progressPercent}%` : ''}
-                                {jobId ? ` (job: ${jobId})` : ''}
-                            </p>
-                        </div>
                     </div>
                 )}
 

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 import tempfile
 import shutil
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -34,7 +34,7 @@ TODO:
 # Configurations (can be adjusted as needed)
 MAX_VIDEO_DURATION_SECONDS = 10800
 MAX_AUDIO_FILE_SIZE_MB = 500
-CHUNK_LENGTH_MS = 20 * 60 * 1000
+CHUNK_LENGTH_MS = 10 * 60 * 1000
 MODEL_NAME = os.getenv('WHISPER_MODEL_NAME', 'large-v3')
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -202,22 +202,31 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
 
     # create chunks
     chunks = []
+    MIN_CHUNK_DURATION_SECONDS = 30
+
     for i in range(num_chunks):
         start_ms = i * chunk_length_ms
         end_ms = min(start_ms + chunk_length_ms, total_duration)
+        chunk_duration_sec = (end_ms - start_ms) / 1000
+
+        if chunk_duration_sec < MIN_CHUNK_DURATION_SECONDS:
+            print(f"   Skipping chunk {i}: too short ({chunk_duration_sec:.1f}s)")
+            continue
+
         out_path = os.path.join(temp_dir, f"chunk_{i:03d}.wav")
 
-        subprocess_cmd = [
-            'ffmpeg', '-y',
-            '-i', audio_path,
-            '-ss', str(start_ms / 1000),
-            '-to', str(end_ms / 1000),
-            '-acodec', 'copy',
-            out_path
-        ]
-
         try:
-            subprocess.run(subprocess_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            subprocess.run([
+                'ffmpeg', '-y',
+                '-i', audio_path,
+                '-ss', str(start_ms / 1000),
+                '-t', str(chunk_duration_sec),
+                '-ar', '16000',
+                '-ac', '1',
+                '-acodec', 'pcm_s16le',
+                out_path
+            ], check=True, capture_output=True)
+            
             chunks.append((out_path, start_ms / 1000, end_ms / 1000))
             print(f"   Chunk {i}: {start_ms/1000:.1f}s → {end_ms/1000:.1f}s")
         except Exception as e:
@@ -229,17 +238,17 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
 
 # Helper function to transcribe audio chunks
 def transcribe_audio_chunks(audio_path, offset_seconds=0):
-    print(f"Transcribing audio chunk: {audio_path} (offset: {offset_seconds/60:.1f} min)...")
+    print(f"Transcribing chunk: {os.path.basename(audio_path)} (offset: {offset_seconds/60:.1f} min)")
 
     try:
-        # run transcription
         result = model.transcribe(
             audio_path,
             language='en',
             verbose=False,
+            print_progress=True,
             batch_size=16,
         )
-        print(f"Transcription completed for chunk: {audio_path}")
+        print(f"Transcription finished for chunk: {os.path.basename(audio_path)}")
     except Exception as e:
         print(f"Error transcribing chunk {audio_path}: {e}")
         return [], ""
@@ -253,7 +262,7 @@ def transcribe_audio_chunks(audio_path, offset_seconds=0):
             audio_path,
             DEVICE
         )
-        print(f"Alignment completed for chunk: {audio_path}")
+        print(f"Alignment finished for chunk: {os.path.basename(audio_path)}")
     except Exception as e:
         print(f"Error aligning chunk {audio_path}: {e}")
         return [], ""
@@ -282,46 +291,51 @@ def transcribe_audio_chunks(audio_path, offset_seconds=0):
     # Build full text from all segments
     full_text = " ".join(seg['text'] for seg in adjusted_segments if seg.get('text')).strip()
 
-    print(f"Chunk {audio_path} processed, segments: {len(adjusted_segments)}")
+    print(f"Chunk {os.path.basename(audio_path)} processed — segments: {len(adjusted_segments)}")
     return adjusted_segments, full_text
 
 # Helper function to transcribe full audio file using parallel processing
-def transcribe_full_audio_parallel(audio_path):
+def transcribe_full_audio(audio_path, progress_callback=None):
     chunks, temp_dir = split_audio(audio_path)
     all_segments = []
+    all_text_parts = []
 
     total_chunks = len(chunks)
     completed_chunks = 0
-    
-    print(f"Starting parallel transcription for {total_chunks} chunks")
 
-    max_workers = min(4, os.cpu_count() or 1)
+    print(f"Starting transcription: {total_chunks} chunk(s)")
+
     try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(transcribe_audio_chunks, c[0], c[1]): c for c in chunks}
-            
-            for future in as_completed(futures):
-                chunk_path, _, _ = futures[future]
-                try:
-                    segments, text = future.result()
-                    all_segments.extend(segments)
-                except Exception as e:
-                    print(f"Failed processing chunk {futures[future]}: {e}")
-                finally:
-                    try:
-                        if os.path.exists(chunk_path):
-                            os.remove(chunk_path)
-                            print(f"Removed temporary chunk file: {chunk_path}")
-                    except Exception:
-                        print(f"Failed to remove temporary chunk file: {chunk_path}")
-                        pass
+        for index, (chunk_path, start_sec, end_sec) in enumerate(chunks):
+            if progress_callback:
+                progress_callback(f"{index + 1}/{total_chunks}...")
 
-                completed_chunks += 1
-                print(f"[Progress] {completed_chunks}/{total_chunks} chunks completed")
+            print(f"\nProcessing chunk {index + 1}/{total_chunks} — {os.path.basename(chunk_path)}")
+
+            try:
+                segments, text = transcribe_audio_chunks(chunk_path, offset_seconds=start_sec)
+                if segments:
+                    all_segments.extend(segments)
+                if text:
+                    all_text_parts.append(text)
+            except Exception as e:
+                print(f"Failed processing chunk {chunk_path}: {e}")
+
+            # remove per-chunk file
+            if temp_dir and chunk_path.startswith(temp_dir):
+                try:
+                    if os.path.exists(chunk_path):
+                        os.remove(chunk_path)
+                        print(f"Removed temporary chunk file: {chunk_path}")
+                except Exception:
+                    print(f"Failed to remove temporary chunk file: {chunk_path}")
+
+            completed_chunks += 1
+            print(f"[Progress] {completed_chunks}/{total_chunks} chunks completed")
     finally:
         # Ensure the chunk directory is removed after processing
         try:
-            if os.path.exists(temp_dir):
+            if temp_dir and os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
                 print(f"Removed temporary chunk directory: {temp_dir}")
         except Exception as e:
@@ -334,7 +348,7 @@ def transcribe_full_audio_parallel(audio_path):
     for idx, segment in enumerate(sorted_segments):
         segment['id'] = idx
 
-    full_text = " ".join(segment.get('text', '').strip() for segment in sorted_segments if segment.get('text'))
+    full_text = " ".join(all_text_parts)
     full_text = re.sub(r'\s+', ' ', full_text).strip()
 
     print(f"Full transcription completed, total segments: {len(sorted_segments)}")
@@ -347,7 +361,7 @@ def run_transcription_job(job_id, youtube_url, year, committee_list, bill_name, 
         audio_path, duration, title = download_youtube_audio(youtube_url, temp_dir)
 
         start_time = datetime.now()
-        segments, full_text = transcribe_full_audio_parallel(audio_path)
+        segments, full_text = transcribe_full_audio(audio_path)
         processing_time = (datetime.now() - start_time).total_seconds()
         committee_slug = '-'.join([sanitize_path(c).replace(' ', '').upper() for c in committee_list]) if committee_list else 'UNKNOWN'
         hearing_id = f"{year}_{committee_slug}_{bill_name}_{video_title}"
@@ -404,30 +418,19 @@ def run_transcription_job(job_id, youtube_url, year, committee_list, bill_name, 
 
 
 # Helper function to handle background transcription jobs
-jobs = {}
-jobs_lock = threading.Lock()
-def background_transcribe(job_id, youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids):
+def background_transcribe(youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids):
+    """Run a transcription job in the background. This no longer maintains
+    in-process job state for polling. The frontend should compute/receive the
+    `folder_path` and check `/transcript/<folder_path>` once to determine
+    completion.
+    """
     try:
-        with jobs_lock:
-            jobs[job_id] = {'status': 'processing', 'progress': '0/0 chunks completed'}
-
         metadata, transcript, folder_path = run_transcription_job(
-            job_id, youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids
+            None, youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids
         )
-
-        with jobs_lock:
-            jobs[job_id]['status'] = 'completed'
-            jobs[job_id]['progress'] = '100%'
-            jobs[job_id]['result'] = {
-                'metadata': metadata,
-                'transcript': transcript,
-                'folder_path': folder_path
-            }
-
+        print(f"Background transcription completed for folder: {folder_path}")
     except Exception as e:
-        with jobs_lock:
-            jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['error'] = str(e)
+        print(f"Background transcription failed: {e}", file=sys.stderr)
     
 # Flask route to check API health
 @app.route('/health', methods=['GET'])
@@ -464,23 +467,19 @@ def transcribe():
             'required': ['youtube_url', 'year', 'committee', 'bill_name', 'video_title', 'hearing_date']
         }), 400
     
-    job_id = str(uuid.uuid4())
-    with jobs_lock:
-        jobs[job_id] = {'status': 'queued'}
+    committee_slug = '-'.join([sanitize_path(c).replace(' ', '').upper() for c in committee_list]) if committee_list else 'UNKNOWN'
+    folder_path = f"{year}/{committee_slug}/{bill_name}/{video_title}".replace(' ', '_')
 
     def run_in_background():
-        background_transcribe(
-            job_id, youtube_url, year, committee_list, bill_name,
-            video_title, hearing_date, room, ampm, bill_ids
-        )
+        background_transcribe(youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids)
 
     threading.Thread(target=run_in_background, daemon=True).start()
 
     return jsonify({
-        'job_id': job_id,
         'status': 'queued',
-        'message': 'Transcription started in background'
-    })
+        'message': 'Transcription started in background',
+        'folder_path': folder_path
+    }), 202
 
 # Flask route to handle GET specific transcript request
 @app.route('/transcript/<path:folder_path>', methods=['GET'])
@@ -541,16 +540,6 @@ def list_transcripts():
             'error': 'Failed to list transcripts',
             'details': str(e)
         }), 500
-
-# Flask route to check job status
-@app.route('/job_status/<job_id>', methods=['GET'])
-def job_status(job_id):
-    with jobs_lock:
-        job = jobs.get(job_id)
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
-    return jsonify(job)
-
 
 # Run the Flask app
 if __name__ == '__main__':

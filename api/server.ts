@@ -89,12 +89,15 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
 
     const resp: any = response.data;
 
-    if (!resp || resp.status === 'queued' || resp.job_id) {
-      // Return 202 Accepted for queued jobs
+    if (!resp) {
+      return res.status(202).json({ status: 'queued', message: 'Job queued' });
+    }
+
+    if (resp.status === 'queued') {
       return res.status(202).json({
-        status: resp?.status ?? 'queued',
-        job_id: resp?.job_id,
-        message: resp?.message ?? 'Job queued'
+        status: resp.status,
+        folder_path: resp.folder_path,
+        message: resp.message ?? 'Job queued'
       });
     }
 
@@ -218,26 +221,6 @@ app.get('/health', async (req: Request, res: Response) => {
         error: error instanceof Error ? error.message : 'Unknown error'
       }
     });
-  }
-});
-
-// Endpoint to check status of asynchronous transcription job
-app.get('/api/job-status/:jobId', async (req: Request, res: Response) => {
-  const jobId = encodeURIComponent(req.params.jobId);
-
-  try {
-    const response = await axios.get(`${PYTHON_API_URL}/job_status/${jobId}`);
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error fetching job status:', error);
-    if (axios.isAxiosError(error)) {
-      res.status(error.response?.status || 500).json({
-        error: 'Failed to fetch job status',
-        details: error.response?.data || error.message
-      });
-    } else {
-      res.status(500).json({ error: 'Unexpected error fetching job status' });
-    }
   }
 });
 
