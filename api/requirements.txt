@@ -26,3 +26,5 @@ pandas>=2.2.3,<2.3.0
 nltk>=3.9.1
 av<16.0.0
 sympy==1.13.3
+google-cloud-storage
+

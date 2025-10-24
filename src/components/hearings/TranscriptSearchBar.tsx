@@ -1,3 +1,9 @@
+/**
+ * TranscriptSearchBar
+ *
+ * Lightweight search input and navigation controls for the transcript view.
+ * Shows the current match position and provides previous/next navigation.
+ */
 import React from 'react';
 import { Search, ChevronUp, ChevronDown } from 'lucide-react';
 
@@ -22,7 +28,6 @@ const TranscriptSearchBar: React.FC<TranscriptSearchBarProps> = ({
     return (
         <div className="bg-white border rounded-lg p-4 mb-6 shadow-sm">
             <div className="flex gap-4 items-center">
-                {/* Search Input Section */}
                 <div className="flex-1">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -44,16 +49,14 @@ const TranscriptSearchBar: React.FC<TranscriptSearchBarProps> = ({
                                 {searchResults.current} of {searchResults.total}
                             </span>
                             <button
-                                onClick={onPrevResult}
-                                disabled={searchResults.current <= 1}
-                                className="p-1.5 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                onClick={() => onPrevResult && onPrevResult()}
+                                className="p-1.5 hover:bg-gray-200 rounded transition-colors"
                                 title="Previous result"
                             >
                                 <ChevronUp className="w-4 h-4" />
                             </button>
                             <button
-                                onClick={onNextResult}
-                                disabled={searchResults.current >= searchResults.total}
+                                onClick={() => onNextResult && onNextResult()}
                                 className="p-1.5 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 title="Next result"
                             >

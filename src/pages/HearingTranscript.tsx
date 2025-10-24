@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { toast } from '@/hooks/use-toast';
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/hearings/PageHeader.tsx';
 import LoadingState from '../components/hearings/LoadingState.tsx';
@@ -83,7 +84,11 @@ const HearingTranscript = () => {
             URL.revokeObjectURL(url);
         } catch (error) {
             console.error('Failed to download transcript:', error);
-            alert('Failed to download transcript. Please try again.');
+            toast({
+                title: 'Download failed',
+                description: 'Failed to download transcript. Please try again.',
+                variant: 'destructive',
+            });
         }
     };
 
@@ -188,9 +193,9 @@ const HearingTranscript = () => {
                         )}
                     </div>
                     
-                    {/* Placeholder for new component */}
+                    {/* Placeholder for read-only terms drawer and summary component */}
                     <div className="bg-white rounded-lg shadow p-4 h-[400px]">
-                        <p className="text-gray-500 text-center">TODO: Read Only Terms Drawer && Summary</p>
+                        <p className="text-gray-500 text-center">Placeholder: read-only terms drawer and summary (to be implemented)</p>
                     </div>
                 </div>
 

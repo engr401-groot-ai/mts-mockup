@@ -9,6 +9,12 @@ interface PageHeaderProps {
     subtitle?: string;
 }
 
+/**
+ * PageHeader
+ *
+ * Reusable page header used by the hearings pages. Includes an optional
+ * back link and subtitle for contextual navigation.
+ */
 const PageHeader: React.FC<PageHeaderProps> = ({ 
     backLink, 
     backLabel = 'Back', 

@@ -15,9 +15,6 @@ export interface VideoPlayerRef {
  * 
  * Embeds YouTube videos with seek functionality for transcript timestamp navigation.
  * Uses YouTube's embedded player API to control playback.
- * 
- * Note: onProgress callback is not currently implemented with YouTube iframe API.
- * For full progress tracking, consider using react-player or YouTube iframe API.
  */
 const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     ({ url }, ref) => {

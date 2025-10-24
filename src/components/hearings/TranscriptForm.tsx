@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { toast } from '@/hooks/use-toast';
 import type { TranscriptionRequest } from '../../types/hearings';
 import {
     validateBillIds,
@@ -57,7 +58,7 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!validateForm()) return;
+        if (!validateForm()) return; 
 
     setTranscribing(true);
     setJobId(null);
@@ -101,10 +102,12 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                 setAmpm('AM');
                 setTitle('');
                 setErrors({});
-                try { alert('Transcription completed successfully!'); } catch (e) {}
+                toast({
+                    title: 'Transcription completed',
+                    description: 'Transcription completed successfully!',
+                    duration: 4000,
+                });
                 window.dispatchEvent(new Event('transcript-updated'));
-            } else {
-                // fallback: treat as queued
             }
         } catch (err) {
             console.error('Form submission error:', err);
@@ -142,49 +145,6 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
 
     const inputDisabled = transcribing;
 
-    const parseFolderPath = (folderPath: string) => {
-        const parts = folderPath.split('/');
-        if (parts.length < 4) return null;
-        const [year, committeeSlug, billName, ...rest] = parts;
-        const videoTitle = rest.join('/');
-        return { year, committeeSlug, billName, videoTitle };
-    };
-
-    const checkTranscript = async (folderPath: string) => {
-        const parts = parseFolderPath(folderPath);
-        if (!parts) {
-            try { alert('Invalid folder path'); } catch (e) {}
-            return;
-        }
-
-        try {
-            const res = await fetch(`/api/transcript/${encodeURIComponent(parts.year)}/${encodeURIComponent(parts.committeeSlug)}/${encodeURIComponent(parts.billName)}/${encodeURIComponent(parts.videoTitle)}`);
-            if (res.status === 200) {
-                const data = await res.json();
-                setTranscribing(false);
-                setQueuedFolderPath(null);
-                // reset form
-                setYoutubeUrl('');
-                setHearingDate('');
-                setChamber('');
-                setCommittee([]);
-                setBillIds('');
-                setRoom('');
-                setAmpm('AM');
-                setTitle('');
-                setErrors({});
-                try { alert('Transcript ready!'); } catch (e) {}
-                window.dispatchEvent(new Event('transcript-updated'));
-            } else if (res.status === 404) {
-                try { alert('Transcript not ready yet — try again later'); } catch (e) {}
-            } else {
-                try { alert('Error checking transcript'); } catch (e) {}
-            }
-        } catch (err) {
-            console.error('Check transcript error', err);
-            try { alert('Failed to check transcript'); } catch (e) {}
-        }
-    };
 
     return (
         <div className="bg-white border rounded-lg p-6 mb-6 shadow-sm">

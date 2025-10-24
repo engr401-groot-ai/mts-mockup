@@ -1,3 +1,9 @@
+/**
+ * ErrorDisplay
+ *
+ * Simple error panel with optional retry action. Intended for use when an
+ * operation fails and the UI needs to present a clear message to the user.
+ */
 import React from 'react';
 
 interface ErrorDisplayProps {

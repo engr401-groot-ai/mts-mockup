@@ -1,3 +1,9 @@
+/**
+ * MtsMockup
+ *
+ * Static mockup page used for layout and UI demos. This page is not mission
+ * critical — it provides a playground for UI layout and example content.
+ */
 const MtsMockup = () => {
     return (
         <div className="hero-section">

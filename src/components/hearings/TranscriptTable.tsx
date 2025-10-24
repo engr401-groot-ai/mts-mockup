@@ -9,6 +9,12 @@ interface TranscriptTableProps {
 }
 
 
+/**
+ * TranscriptTable
+ *
+ * Simple tabular list of transcripts used where a compact, sortable view
+ * is preferred over the hierarchical tree view.
+ */
 const TranscriptTable: React.FC<TranscriptTableProps> = ({ transcripts }) => {
     if (transcripts.length === 0) {
         return null;

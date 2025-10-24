@@ -21,20 +21,25 @@ import whisperx
 import yt_dlp
 from google.cloud import storage
 
-'''
-TODO:
-- Rate Limiting
-- Locks
-- Request timeout handling
-- Proper logging
-- File size and duration checks
-- Job queue management
-'''
+"""WhisperX transcription Flask service.
+
+Provides endpoints and helpers to download audio, split into chunks,
+run WhisperX transcription and alignment, and upload results to GCS.
+
+Configuration:
+- GCS_BUCKET: Google Cloud Storage bucket for uploads
+- WHISPER_MODEL_NAME: model identifier used by whisperx
+
+Notes:
+- The module relies on external binaries (ffmpeg/ffprobe) and temporary
+    directories. Production deployment should add rate limiting, job queue
+    management, timeout handling, and robust logging.
+"""
 
 # Configurations (can be adjusted as needed)
 MAX_VIDEO_DURATION_SECONDS = 10800
 MAX_AUDIO_FILE_SIZE_MB = 500
-CHUNK_LENGTH_MS = 10 * 60 * 1000
+CHUNK_LENGTH_MS = 15 * 60 * 1000
 MODEL_NAME = os.getenv('WHISPER_MODEL_NAME', 'large-v3')
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -42,11 +47,9 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 app = Flask(__name__)
 CORS(app)
 
-# Initialize google cloud storage
 storage_client = storage.Client()
 BUCKET_NAME = os.getenv('GCS_BUCKET', 'hearing_videos')
 
-# Load Open AI WhisperX Model
 print("Loading WhisperX model...")
 if DEVICE == "cuda":
     model = whisperx.load_model(MODEL_NAME, device=DEVICE, compute_type="float16")
@@ -55,14 +58,17 @@ else:
 alignment_model, metadata = whisperx.load_align_model(language_code='en', device=DEVICE)
 print(f"WhisperX model '{MODEL_NAME}' loaded on {DEVICE}.")
 
-# Context manager for temporary directories
 @contextmanager
 def managed_temp_dir():
     with tempfile.TemporaryDirectory() as temp_dir:
         yield temp_dir
 
-# Helper function to sanitize path components
 def sanitize_path(component):
+    """Sanitize a string for safe use in file paths and identifiers.
+
+    Removes path traversal characters and replaces non-alphanumeric
+    characters with underscores.
+    """
     if not component:
         return ''
     component = str(component).strip()
@@ -70,8 +76,11 @@ def sanitize_path(component):
     component = re.sub(r'[^\w\s\-]', '_', component)
     return component
 
-# Helper function to upload json to GCS
 def upload_to_gcs(content, filepath):
+    """Upload a JSON-serializable object to Google Cloud Storage.
+
+    Returns the `gs://` path on success or raises a RuntimeError on failure.
+    """
     try:
         bucket = storage_client.bucket(BUCKET_NAME)
         blob = bucket.blob(filepath)
@@ -96,8 +105,12 @@ def upload_to_gcs(content, filepath):
         print(f"ERROR uploading to GCS: {filepath} -> {e}", file=sys.stderr)
         raise RuntimeError(f"Failed to upload {filepath} to GCS: {str(e)}")
 
-# Helper function to get json from GCS
 def get_from_gcs(filepath):
+    """Fetch and parse JSON content from GCS if the blob exists.
+
+    Returns the parsed object or `None` when the blob is missing or an error
+    occurs.
+    """
     try:
         bucket = storage_client.bucket(BUCKET_NAME)
         blob = bucket.blob(filepath)
@@ -109,8 +122,12 @@ def get_from_gcs(filepath):
         print(f"Error fetching from GCS: {str(e)}", file=sys.stderr)
         return None
 
-# Helper function to download _u video from url and get audio
 def download_youtube_audio(youtube_url, temp_dir):
+    """Download the audio track for a YouTube URL into `temp_dir`.
+
+    Returns the path to the downloaded WAV file, its duration in seconds,
+    and the video title. Uses `yt_dlp` + ffmpeg postprocessing.
+    """
     output_path = os.path.join(temp_dir, "audio")
     print(f"Downloading audio from {youtube_url}")
 
@@ -132,7 +149,6 @@ def download_youtube_audio(youtube_url, temp_dir):
         },
     }
 
-    # download the audio using yt_dlp
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(youtube_url, download=True)
         duration = info.get('duration', 0)
@@ -146,11 +162,11 @@ def download_youtube_audio(youtube_url, temp_dir):
 
     return wav_file, duration, title
 
-# Helper function to split audio into chunks
 def cleanup_old_chunk_dirs(prefix='whisperx_chunks_', max_age_seconds=60):
-    """Remove old temporary chunk directories left from previous runs.
-    Only removes directories older than `max_age_seconds` to avoid interfering
-    with currently running jobs.
+    """Remove stale temporary chunk directories older than `max_age_seconds`.
+
+    This helps keep /tmp from filling up when previous runs crashed or left
+    artifacts behind.
     """
     tmp_root = tempfile.gettempdir()
     now = time.time()
@@ -174,6 +190,12 @@ def cleanup_old_chunk_dirs(prefix='whisperx_chunks_', max_age_seconds=60):
         print(f"Error during stale chunk dir cleanup: {e}")
 
 def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
+    """Split a long audio file into WAV chunks suitable for WhisperX.
+
+    Returns (chunks, temp_dir) where `chunks` is a list of
+    (path, start_sec, end_sec) tuples and `temp_dir` is the directory
+    containing the created chunk files (caller is responsible for cleanup).
+    """
     # clean up any stale chunk dirs before creating a fresh one
     cleanup_old_chunk_dirs()
     temp_dir = tempfile.mkdtemp(prefix="whisperx_chunks_")
@@ -188,7 +210,7 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
         
         total_duration = float(result.stdout.strip()) * 1000
     except Exception as e:
-        # Clean up temp_dir on failure to avoid leaving junk behind
+        # clean up temp_dir on failure to avoid leaving junk behind
         try:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
@@ -200,7 +222,6 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
     num_chunks = math.ceil(total_duration / chunk_length_ms)
     print(f"Total duration: {total_duration/1000:.1f}s ({num_chunks} chunks expected)")
 
-    # create chunks
     chunks = []
     MIN_CHUNK_DURATION_SECONDS = 30
 
@@ -236,8 +257,12 @@ def split_audio(audio_path, chunk_length_ms=CHUNK_LENGTH_MS):
     # return both the chunk list and the temp directory so callers can clean up
     return chunks, temp_dir
 
-# Helper function to transcribe audio chunks
 def transcribe_audio_chunks(audio_path, offset_seconds=0):
+    """Transcribe and align a single audio chunk using WhisperX.
+
+    Returns (adjusted_segments, full_text) where segments timestamps are
+    offset by `offset_seconds` so they can be merged into a global timeline.
+    """
     print(f"Transcribing chunk: {os.path.basename(audio_path)} (offset: {offset_seconds/60:.1f} min)")
 
     try:
@@ -294,8 +319,10 @@ def transcribe_audio_chunks(audio_path, offset_seconds=0):
     print(f"Chunk {os.path.basename(audio_path)} processed — segments: {len(adjusted_segments)}")
     return adjusted_segments, full_text
 
-# Helper function to transcribe full audio file using parallel processing
 def transcribe_full_audio(audio_path, progress_callback=None):
+    """Transcribe a full audio file by splitting into chunks and processing
+    them sequentially. Returns (sorted_segments, full_text).
+    """
     chunks, temp_dir = split_audio(audio_path)
     all_segments = []
     all_text_parts = []
@@ -354,8 +381,12 @@ def transcribe_full_audio(audio_path, progress_callback=None):
     print(f"Full transcription completed, total segments: {len(sorted_segments)}")
     return sorted_segments, full_text
 
-# Helper function to run a transcription job
 def run_transcription_job(job_id, youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids):
+    """Run an end-to-end transcription job: download, transcribe, upload.
+
+    Returns (metadata, transcript, folder_path) on success. Caller should
+    handle exceptions and cleanup is performed in the finally block.
+    """
     temp_dir = tempfile.mkdtemp()
     try:
         audio_path, duration, title = download_youtube_audio(youtube_url, temp_dir)
@@ -405,7 +436,6 @@ def run_transcription_job(job_id, youtube_url, year, committee_list, bill_name, 
     except Exception as e:
         raise e
     finally:
-        # Clean up download temp dir
         try:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
@@ -417,12 +447,11 @@ def run_transcription_job(job_id, youtube_url, year, committee_list, bill_name, 
         cleanup_old_chunk_dirs()
 
 
-# Helper function to handle background transcription jobs
 def background_transcribe(youtube_url, year, committee_list, bill_name, video_title, hearing_date, room, ampm, bill_ids):
-    """Run a transcription job in the background. This no longer maintains
-    in-process job state for polling. The frontend should compute/receive the
-    `folder_path` and check `/transcript/<folder_path>` once to determine
-    completion.
+    """Wrapper to run `run_transcription_job` in a background thread.
+
+    The function intentionally does not store in-process job state; the
+    frontend is expected to poll the transcript endpoint for completion.
     """
     try:
         metadata, transcript, folder_path = run_transcription_job(
@@ -432,9 +461,13 @@ def background_transcribe(youtube_url, year, committee_list, bill_name, video_ti
     except Exception as e:
         print(f"Background transcription failed: {e}", file=sys.stderr)
     
-# Flask route to check API health
 @app.route('/health', methods=['GET'])
 def health_check():
+    """Health endpoint returning basic runtime info for monitoring.
+
+    Useful for readiness checks; returns model name, GCS bucket, and
+    configured chunk length.
+    """
     return jsonify({
         'status': 'healthy',
         'model': MODEL_NAME,
@@ -442,9 +475,14 @@ def health_check():
         'chunk_length_minutes': CHUNK_LENGTH_MS / 1000 / 60,
     })
 
-# Flask route to handle POST transcribe requests
 @app.route('/transcribe', methods=['POST'])
 def transcribe():
+    """Start a transcription job.
+
+    This endpoint accepts JSON payloads describing the hearing and starts a
+    background transcription worker; it returns a 202 with the expected
+    `folder_path` that can be polled for completion.
+    """
     data = request.json
     youtube_url = data.get('youtube_url')
     year = sanitize_path(data.get('year', ''))
@@ -481,9 +519,12 @@ def transcribe():
         'folder_path': folder_path
     }), 202
 
-# Flask route to handle GET specific transcript request
 @app.route('/transcript/<path:folder_path>', methods=['GET'])
 def get_transcript(folder_path):
+    """Fetch metadata and transcript JSON for a given folder path.
+
+    Returns 404 when the transcript is not available yet.
+    """
     try:
         if '..' in folder_path:
             return jsonify({'error': 'Invalid path'}), 400
@@ -509,9 +550,12 @@ def get_transcript(folder_path):
             'details': str(e)
         }), 500
 
-# Flask route to handle GET list of transcripts request
 @app.route('/list-transcripts', methods=['GET'])
 def list_transcripts():
+    """List available transcripts by reading metadata blobs from GCS.
+
+    Returns a list of metadata objects sorted by date (newest first).
+    """
     try:
         bucket = storage_client.bucket(BUCKET_NAME)
         blobs = bucket.list_blobs(max_results=1000)
@@ -541,7 +585,6 @@ def list_transcripts():
             'details': str(e)
         }), 500
 
-# Run the Flask app
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))
     print(f"\n{'='*60}")

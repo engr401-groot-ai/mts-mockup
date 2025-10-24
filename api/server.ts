@@ -12,6 +12,13 @@ import type {
 } from '../src/types/hearings';
 
 dotenv.config();
+/**
+ * Express proxy for the Python transcription service.
+ *
+ * This server forwards transcription-related requests from the frontend to
+ * the Python API, performs lightweight validation/formatting, and exposes
+ * convenient endpoints for the UI.
+ */
 
 const app = express();
 const PORT = 3001;
@@ -48,7 +55,13 @@ function formatTranscriptResponse(data: PythonAPIResponse): ClientResponse {
     };
 }
 
-// Post endpoint to handle transcribing new videos
+/**
+ * POST /api/transcribe
+ *
+ * Validate the request body and forward the transcription request to the
+ * Python service. Returns the formatted transcript when available or a
+ * 202 accepted response if the Python service queued the job.
+ */
 app.post('/api/transcribe', async (req: Request, res: Response) => {
     const { youtube_url, year, committee, bill_name, bill_ids, video_title, hearing_date, room, ampm } = req.body;
 
@@ -126,7 +139,12 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
     }
 });
 
-// Get endpoint to retrieve a specific transcripts
+/**
+ * GET /api/transcript/:year/:committee/:billName/:videoTitle
+ *
+ * Retrieve a single transcript from the Python API and map it to the
+ * client response shape used by the frontend.
+ */
 app.get('/api/transcript/:year/:committee/:billName/:videoTitle', async (req: Request, res: Response) => {
   const { year, committee, billName, videoTitle } = req.params;
 
@@ -162,7 +180,12 @@ app.get('/api/transcript/:year/:committee/:billName/:videoTitle', async (req: Re
   }
 });
 
-// Get endpoint to list all transcripts
+/**
+ * GET /api/transcripts
+ *
+ * Proxy to the Python service to list available transcripts. Normalizes
+ * the metadata shape for easier client consumption.
+ */
 app.get('/api/transcripts', async (req: Request, res: Response) => {
   try {
     const response = await axios.get(`${PYTHON_API_URL}/list-transcripts`);
@@ -194,7 +217,12 @@ app.get('/api/transcripts', async (req: Request, res: Response) => {
   }
 });
 
-// Get endpoint for health check
+/**
+ * GET /health
+ *
+ * Returns combined health information for the Node proxy and the Python
+ * transcription service (if reachable).
+ */
 app.get('/health', async (req: Request, res: Response) => {
   try {
     const pythonHealth = await axios.get(`${PYTHON_API_URL}/health`, {
@@ -224,7 +252,6 @@ app.get('/health', async (req: Request, res: Response) => {
   }
 });
 
-// Start the server
 app.listen(PORT, () => {
   console.log('\n' + '='.repeat(60));
   console.log('Node.js+Express Server Started');

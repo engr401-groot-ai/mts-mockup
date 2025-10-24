@@ -14,11 +14,12 @@ interface TranscriptProps {
 }
 
 /**
- * TranscriptDisplay Component
- * 
- * Displays hearing transcript with search functionality, video synchronization,
- * and timestamp navigation. Supports real-time highlighting of current segment
- * based on video playback position.
+ * TranscriptDisplay
+ *
+ * Renders the hearing transcript, supports search highlighting, navigation
+ * to timestamps, and highlights the segment that corresponds to the current
+ * playback time. The component exposes search result counts to the parent
+ * via `onSearchResultsChange` and supports downloading via `onDownload`.
  */
 
 const TranscriptDisplay: React.FC<TranscriptProps> = ({
@@ -153,7 +154,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
 
     return (
         <>
-            {/* Header with Download */}
+            {/* Download control */}
             {onDownload && (
                 <div className="p-4 border-b">
                     <TranscriptDownload 
@@ -163,7 +164,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                 </div>
             )}
             
-            {/* Tabs */}
+            {/* View tabs */}
             <div className="border-b">
                 <div className="flex">
                     <button
@@ -189,7 +190,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                 </div>
             </div>
             
-            {/* Tab Content */}
+            {/* Tab content */}
             {activeTab === 'fullText' ? (
                 <div ref={containerRef} className="flex-1 overflow-y-auto space-y-2 p-4">
                     {segments.map((segment) => (
@@ -217,7 +218,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                 <div className="flex-1 overflow-y-auto p-4">
                     <div className="flex items-center justify-center h-full">
                         <div className="text-center">
-                            <p className="text-gray-500 mb-2">TODO: Implicit and Explicit Mentions</p>
+                            <p className="text-gray-500 mb-2">Placeholder: mentions view (implicit/explicit mentions display to be implemented)</p>
                         </div>
                     </div>
                 </div>

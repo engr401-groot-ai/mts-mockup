@@ -19,12 +19,10 @@ interface TreeNode {
 }
 
 /**
- * TranscriptTreeView Component
- * 
- * Displays transcripts in a hierarchical tree structure organized by:
- * Year → Bill Type (HB/SB) → Committee → Bill → Individual Transcripts
- * 
- * Provides expand/collapse functionality for easy navigation.
+ * TranscriptTreeView
+ *
+ * Hierarchical view of transcripts organized by Year → Bill Type → Committee → Bill → Transcript.
+ * Provides expand/collapse controls and quick navigation to analysis pages.
  */
 const TranscriptTreeView: React.FC<TranscriptTreeViewProps> = ({ transcripts }) => {
     const [selectedYear, setSelectedYear] = useState<string>('');
@@ -173,7 +171,7 @@ const TranscriptTreeView: React.FC<TranscriptTreeViewProps> = ({ transcripts }) 
                     <div className="flex-1 flex items-center justify-between gap-4">
                         <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium text-gray-900 truncate">
-                                {node.transcript.title}
+                                {node.transcript.video_title}
                             </div>
                             <div className="text-xs text-gray-500 flex items-center gap-3 mt-1">
                                 <span>{formatDateShort(node.transcript.date)}</span>
