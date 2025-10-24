@@ -195,7 +195,7 @@ const HearingTranscript = () => {
                     
                     {/* Placeholder for read-only terms drawer and summary component */}
                     <div className="bg-white rounded-lg shadow p-4 h-[400px]">
-                        <p className="text-gray-500 text-center">Placeholder: read-only terms drawer and summary (to be implemented)</p>
+                        <p className="text-gray-500 text-center">TODO: Mentions Summary</p>
                     </div>
                 </div>
 
