@@ -97,7 +97,7 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
       ampm: ampm
     };
 
-        const response = await axios.post<PythonAPIResponse>(
+      const response = await axios.post<PythonAPIResponse>(
             `${PYTHON_API_URL}/transcribe`, 
             requestPayload,
             { timeout: REQUEST_TIMEOUT }
@@ -105,26 +105,28 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
         
     console.log('Python /transcribe response:', JSON.stringify(response.data || {}, null, 2));
 
-    const resp: any = response.data;
+    const resp = response.data as unknown;
 
     if (!resp) {
       return res.status(202).json({ status: 'queued', message: 'Job queued' });
     }
 
-    if (resp.status === 'queued') {
+    const respObj = resp as Record<string, unknown>;
+
+    if (respObj.status === 'queued') {
       return res.status(202).json({
-        status: resp.status,
-        folder_path: resp.folder_path,
-        message: resp.message ?? 'Job queued'
+        status: String(respObj.status),
+        folder_path: respObj.folder_path ? String(respObj.folder_path) : undefined,
+        message: String(respObj.message ?? 'Job queued')
       });
     }
 
-    if (resp.transcript) {
+    if ('transcript' in respObj && respObj.transcript) {
       const formattedResponse = formatTranscriptResponse(resp as PythonAPIResponse);
       return res.json(formattedResponse);
     }
 
-    return res.json(resp);
+    return res.json(respObj);
     } catch (error) {
         console.error('Error during transcription:', error);
 
@@ -155,7 +157,7 @@ app.get('/api/transcript/:year/:committee/:billName/:videoTitle', async (req: Re
 
   const normalizeCommittee = (c: string | undefined) => {
     if (!c) return 'UNKNOWN';
-    const parts = String(c).split(/[,\-]+/).map(p => p.trim()).filter(Boolean);
+    const parts = String(c).split(/[,-]+/).map(p => p.trim()).filter(Boolean);
     if (parts.length === 0) return 'UNKNOWN';
     return parts.map(p => p.replace(/\s+/g, '').toUpperCase()).join('-');
   };

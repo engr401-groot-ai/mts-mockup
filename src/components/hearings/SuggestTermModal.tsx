@@ -1,7 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
-const SuggestTermForm: React.FC = () => {
-    const [open, setOpen] = useState(false);
+interface SuggestTermModalProps {
+    open?: boolean;
+    onClose?: () => void;
+}
+
+/**
+ * SuggestTermModal
+ *
+ * Modal that allows users to suggest new key terms to be added to the system.
+ */
+const SuggestTermModal: React.FC<SuggestTermModalProps> = ({ open: controlledOpen, onClose }) => {
+    const [internalOpen, setInternalOpen] = useState<boolean>(false);
+    const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [category, setCategory] = useState('');
@@ -75,7 +86,8 @@ const SuggestTermForm: React.FC = () => {
             reset();
             setTimeout(() => {
                 setSuccess(null);
-                setOpen(false);
+                if (onClose) onClose();
+                else setInternalOpen(false);
             }, 1800);
         } catch (err) {
             setError(String(err instanceof Error ? err.message : err));
@@ -84,38 +96,61 @@ const SuggestTermForm: React.FC = () => {
         }
     };
 
+    // Notify others whenever this modal is open (controlled or uncontrolled)
+    useEffect(() => {
+        if (open) {
+            window.dispatchEvent(new CustomEvent('suggest-term-open'));
+        }
+    }, [open]);
+
+    // Close this uncontrolled modal if a keyterms modal opens elsewhere
+    useEffect(() => {
+        function onKeytermsOpen() {
+            if (internalOpen) setInternalOpen(false);
+        }
+        window.addEventListener('keyterms-open', onKeytermsOpen as EventListener);
+        return () => window.removeEventListener('keyterms-open', onKeytermsOpen as EventListener);
+    }, [internalOpen]);
+
     return (
         <div className="relative">
-            <button
-                onClick={() => setOpen(v => !v)}
-                className="text-sm text-blue-600 hover:underline"
-                aria-expanded={open}
-                aria-label="Suggest term"
-            >
-                Suggest term
-            </button>
+            {/* If uncontrolled (no controlledOpen provided), render trigger */}
+            {controlledOpen === undefined && (
+                <button
+                    onClick={() => setInternalOpen(v => !v)}
+                    className="text-sm text-blue-600 hover:underline"
+                    aria-expanded={open}
+                    aria-label="Suggest term"
+                >
+                    Suggest term
+                </button>
+            )}
 
             {open && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center">
                     {/* backdrop */}
                     <div
                         className="fixed inset-0 bg-black opacity-40"
-                        onClick={() => { setOpen(false); setError(null); setSuccess(null); }}
+                        onClick={() => {
+                            if (onClose) onClose();
+                            else { setInternalOpen(false); setError(null); setSuccess(null); }
+                        }}
                     />
 
                     {/* modal dialog */}
                     <div className="relative z-10 w-full max-w-2xl mx-4 bg-white border rounded shadow-lg p-6">
                         <div className="flex items-start justify-between mb-4">
-                            <h3 className="text-lg font-semibold">Suggest a term</h3>
+                            <h3 className="text-lg font-semibold">Suggest Key Term</h3>
                             <button
                                 type="button"
                                 aria-label="Close"
-                                onClick={() => { setOpen(false); setError(null); setSuccess(null); }}
+                                onClick={() => { if (onClose) onClose(); else { setInternalOpen(false); setError(null); setSuccess(null); } }}
                                 className="text-gray-500 hover:text-gray-700 text-lg leading-none"
                             >
                                 ×
                             </button>
                         </div>
+
 
                         <form onSubmit={handleSubmit}>
 
@@ -198,7 +233,7 @@ const SuggestTermForm: React.FC = () => {
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => { setOpen(false); setError(null); setSuccess(null); }}
+                                            onClick={() => { if (onClose) onClose(); else { setInternalOpen(false); setError(null); setSuccess(null); } }}
                                             className="px-4 py-2 text-base rounded border bg-gray-100 hover:bg-gray-200"
                                         >
                                             Cancel
@@ -216,4 +251,4 @@ const SuggestTermForm: React.FC = () => {
     );
 };
 
-export default SuggestTermForm;
+export default SuggestTermModal;

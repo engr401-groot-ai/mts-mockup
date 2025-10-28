@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { toast } from '@/hooks/use-toast';
 import type { TranscriptionRequest } from '../../types/hearings';
 import {
@@ -11,7 +11,7 @@ import {
 import { getCommitteesByChamber, type Chamber } from '../../lib/constants/committees';
 
 interface TranscriptFormProps {
-    onSubmit: (data: TranscriptionRequest) => Promise<any>;
+    onSubmit: (data: TranscriptionRequest) => Promise<unknown>;
     onCancel?: () => void;
 }
 
@@ -86,12 +86,13 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
             };
 
             const startResult = await onSubmit(data);
+            const sr = startResult as Record<string, unknown> | null;
 
-            if (startResult?.folder_path) {
+            if (sr && 'folder_path' in sr && sr.folder_path) {
                 startedBackgroundJob = true;
-                setQueuedFolderPath(startResult.folder_path);
+                setQueuedFolderPath(String(sr.folder_path));
                 setProgressPercent(0);
-            } else if (startResult?.transcript) {
+            } else if (sr && 'transcript' in sr && sr.transcript) {
                 setProgressPercent(100);
                 setYoutubeUrl('');
                 setHearingDate('');

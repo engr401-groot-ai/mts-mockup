@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
-import TranscriptDownload from './TranscriptDownload';
+import TranscriptDropdown from './TranscriptDropdown';
+import KeytermsModal from './KeyTermsModal';
+import SuggestTermModal from './SuggestTermModal';
 import { formatTimestamp } from '../../lib/formatUtils';
 import type { TranscriptSegment, SearchMatch } from '../../types/hearings';
 
@@ -33,6 +35,8 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [activeTab, setActiveTab] = useState<'fullText' | 'mentions'>('fullText');
+    const [showKeytermsModal, setShowKeytermsModal] = useState(false);
+    const [showSuggestModal, setShowSuggestModal] = useState(false);
 
     // Calculate all search matches across all segments
     const searchMatches = useMemo(() => {
@@ -154,15 +158,23 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
 
     return (
         <>
-            {/* Download control */}
-            {onDownload && (
-                <div className="p-4 border-b">
-                    <TranscriptDownload 
-                        onDownload={onDownload}
-                        segmentCount={segments.length}
-                    />
+            {/* Header: transcript details + actions dropdown (right) */}
+            <div className="p-4 border-b flex items-center justify-between">
+                <div>
+                    <h3 className="text-lg font-semibold">Transcript Details</h3>
+                    <div className="text-sm text-gray-600">
+                        {segments.length} segment{segments.length !== 1 ? 's' : ''}
+                    </div>
                 </div>
-            )}
+                {onDownload && (
+                    <div className="flex items-center">
+                        <TranscriptDropdown
+                            onDownload={onDownload}
+                            onShowKeyterms={() => setShowKeytermsModal(true)}
+                        />
+                    </div>
+                )}
+            </div>
             
             {/* View tabs */}
             <div className="border-b">
@@ -223,6 +235,14 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                     </div>
                 </div>
             )}
+            <KeytermsModal
+                open={showKeytermsModal}
+                onClose={() => setShowKeytermsModal(false)}
+                onOpenSuggest={() => setShowSuggestModal(true)}
+            />
+
+            {/* Standalone SuggestTermModal (controlled by this parent). When opened, KeytermsModal will be closed by the handler above. */}
+            <SuggestTermModal open={showSuggestModal} onClose={() => setShowSuggestModal(false)} />
         </>
     );
 };

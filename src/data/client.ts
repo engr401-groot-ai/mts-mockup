@@ -18,8 +18,8 @@ interface BillDetail extends Bill {
   fetched_at: string;
   source_url: string;
   text?: string;
-  amendments?: any[];
-  history?: any[];
+  amendments?: unknown[];
+  history?: unknown[];
 }
 
 export async function getBills(year: number): Promise<Bill[]> {

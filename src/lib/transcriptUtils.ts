@@ -68,7 +68,7 @@ export const committeeToSlug = (committee: string | string[] | undefined): strin
     if (Array.isArray(committee)) {
         return committee.map(c => String(c).trim().replace(/\s+/g, '').toUpperCase()).join('-');
     }
-    const parts = String(committee).split(/[,\-]+/).map(p => p.trim()).filter(Boolean);
+    const parts = String(committee).split(/[,-]+/).map(p => p.trim()).filter(Boolean);
     if (parts.length > 1) return parts.map(p => p.replace(/\s+/g, '').toUpperCase()).join('-');
     return String(committee).trim().replace(/\s+/g, '-').toUpperCase();
 };
@@ -115,7 +115,7 @@ export const generateFolderPath = (
     const year = hearingDate.split('-')[0];
     const comm = committeeToSlug(committee);
     const bills = validation.normalized.join('_');
-    const titleSlug = title.trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '_');
+    const titleSlug = title.trim().replace(/\s+/g, '_').replace(/[^\w-]/g, '_');
 
     return `${year}/${comm}/${bills}/${titleSlug}`;
 };
@@ -124,7 +124,7 @@ export const generateFolderPath = (
  * Sanitizes a string for use in URLs/paths
  */
 export const sanitizeForPath = (input: string): string => {
-    return input.trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '_');
+    return input.trim().replace(/\s+/g, '_').replace(/[^\w-]/g, '_');
 };
 
 /**
