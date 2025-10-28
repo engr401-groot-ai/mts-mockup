@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { suggestKeyterm } from '../../data/client';
+import type { ModalProps } from '../../types/ui';
 
-interface SuggestTermModalProps {
-    open?: boolean;
-    onClose?: () => void;
-}
+type SuggestTermModalProps = Partial<ModalProps>;
 
 /**
  * SuggestTermModal
@@ -71,16 +70,7 @@ const SuggestTermModal: React.FC<SuggestTermModalProps> = ({ open: controlledOpe
 
         try {
             setLoading(true);
-            const res = await fetch('http://localhost:3001/api/sheet/suggest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `HTTP ${res.status}`);
-            }
+            await suggestKeyterm(payload);
 
             setSuccess('Thanks — your suggestion was submitted.');
             reset();
@@ -96,21 +86,6 @@ const SuggestTermModal: React.FC<SuggestTermModalProps> = ({ open: controlledOpe
         }
     };
 
-    // Notify others whenever this modal is open (controlled or uncontrolled)
-    useEffect(() => {
-        if (open) {
-            window.dispatchEvent(new CustomEvent('suggest-term-open'));
-        }
-    }, [open]);
-
-    // Close this uncontrolled modal if a keyterms modal opens elsewhere
-    useEffect(() => {
-        function onKeytermsOpen() {
-            if (internalOpen) setInternalOpen(false);
-        }
-        window.addEventListener('keyterms-open', onKeytermsOpen as EventListener);
-        return () => window.removeEventListener('keyterms-open', onKeytermsOpen as EventListener);
-    }, [internalOpen]);
 
     return (
         <div className="relative">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/hearings/PageHeader.tsx';
@@ -9,6 +9,7 @@ import TranscriptSearchBar from '../components/hearings/TranscriptSearchBar.tsx'
 import TranscriptDisplay from '../components/hearings/TranscriptDisplay.tsx';
 import VideoPlayer, { VideoPlayerRef } from '../components/hearings/VideoPlayer.tsx';
 import type { ClientResponse, SearchResults } from '../types/hearings.ts';
+import { fetchTranscript as apiFetchTranscript } from '../data/client';
 
 /**
  * HearingTranscript Page
@@ -41,17 +42,18 @@ const HearingTranscript = () => {
             setLoading(true);
             setError(null);
 
-            const res = await fetch(`http://localhost:3001/api/transcript/${year}/${committee}/${billName}/${videoTitle}`);
-
-            if (!res.ok) {
-                if (res.status === 404) {
-                    throw new Error('Transcript not found');
-                }
-                throw new Error(`HTTP error! status: ${res.status}`);
+            if (!year || !committee || !billName || !videoTitle) {
+                setError('Missing route parameters');
+                return;
             }
 
-            const data: ClientResponse = await res.json();
-            setTranscript(data);
+            const data = await apiFetchTranscript(year, committee, billName, videoTitle);
+            if (!data) {
+                setError('Transcript not found');
+                setTranscript(null);
+            } else {
+                setTranscript(data);
+            }
         } catch (err) {
             console.error('Failed to load transcript:', err);
             setError(err instanceof Error ? err.message : 'Failed to load transcript');
@@ -105,7 +107,6 @@ const HearingTranscript = () => {
     const handleSearchResultsChange = useCallback((results: { total: number; matches: Array<{ segmentId: number; matchIndex: number }> }) => {
         setSearchResults(prev => ({
             ...results,
-            // Keep current index valid when search results change
             current: results.total > 0 ? Math.min(prev.current || 1, results.total) : 0
         }));
     }, []);
@@ -113,7 +114,6 @@ const HearingTranscript = () => {
     const handleNextResult = () => {
         setSearchResults(prev => ({
             ...prev,
-            // Wrap around to first result when at end
             current: prev.current < prev.total ? prev.current + 1 : 1
         }));
     };
@@ -121,7 +121,6 @@ const HearingTranscript = () => {
     const handlePrevResult = () => {
         setSearchResults(prev => ({
             ...prev,
-            // Wrap around to last result when at beginning
             current: prev.current > 1 ? prev.current - 1 : prev.total
         }));
     };
@@ -129,10 +128,8 @@ const HearingTranscript = () => {
     const handleSearchChange = (value: string) => {
         setSearchTerm(value);
         if (!value) {
-            // Reset search results when search is cleared
             setSearchResults({ total: 0, current: 0, matches: [] });
         } else {
-            // Reset to first result when new search term is entered
             setSearchResults(prev => ({ ...prev, current: 1 }));
         }
     };
@@ -177,7 +174,7 @@ const HearingTranscript = () => {
             />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                {/* Left Column - Video + Terms */}
+                {/* Left Column - Video + Summary */}
                 <div className="flex flex-col gap-4 h-[800px]">
                     <div className="bg-white rounded-lg shadow p-4 h-[400px]">
                         {transcript?.youtube_url ? (
@@ -193,7 +190,6 @@ const HearingTranscript = () => {
                         )}
                     </div>
                     
-                    {/* Placeholder for read-only terms drawer and summary component */}
                     <div className="bg-white rounded-lg shadow p-4 h-[400px]">
                         <p className="text-gray-500 text-center">TODO: Mentions Summary</p>
                     </div>

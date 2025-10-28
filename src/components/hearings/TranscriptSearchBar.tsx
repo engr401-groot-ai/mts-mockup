@@ -1,9 +1,3 @@
-/**
- * TranscriptSearchBar
- *
- * Lightweight search input and navigation controls for the transcript view.
- * Shows the current match position and provides previous/next navigation.
- */
 import React from 'react';
 import { Search, ChevronUp, ChevronDown } from 'lucide-react';
 
@@ -18,6 +12,12 @@ interface TranscriptSearchBarProps {
     onPrevResult?: () => void;
 }
 
+/**
+ * TranscriptSearchBar
+ *
+ * Search input and navigation controls for the transcript view.
+ * Shows the current match position and provides previous/next navigation.
+ */
 const TranscriptSearchBar: React.FC<TranscriptSearchBarProps> = ({
     searchTerm,
     onSearchChange,

@@ -6,6 +6,7 @@ import TranscriptTreeView from '../components/hearings/TranscriptTreeView.tsx';
 import EmptyState from '../components/hearings/EmptyState.tsx';
 import ErrorDisplay from '../components/hearings/ErrorDisplay.tsx';
 import type { TranscriptListItem, TranscriptionRequest } from '../types/hearings.ts';
+import { fetchTranscripts, startTranscription } from '../data/client';
 
 /**
  * Hearings Page
@@ -22,57 +23,35 @@ const Hearings = () => {
     
 
     useEffect(() => {
-        fetchTranscripts();
-
-        const handleUpdate = () => {
-            console.log('Transcript update detected — refreshing list...');
-            fetchTranscripts();
-        };
-
-        window.addEventListener('transcript-updated', handleUpdate);
-
-        return () => {
-            window.removeEventListener('transcript-updated', handleUpdate);
-        };
-    }, []);
-
-    const fetchTranscripts = async () => {
-        try {
+        const load = async () => {
             setLoading(true);
             setError(null);
-
-            const res = await fetch('http://localhost:3001/api/transcripts');
-
-            if (!res.ok) {
-                throw new Error(`HTTP error! status: ${res.status}`);
+            try {
+                const items = await fetchTranscripts();
+                setTranscripts(items);
+            } catch (err) {
+                console.error('Error loading transcripts:', err);
+                setError(err instanceof Error ? err.message : 'Failed to load transcripts');
+            } finally {
+                setLoading(false);
             }
+        };
 
-            const data = await res.json();
-            setTranscripts(data.transcripts || []);
-        } catch (err) {
-            console.error('Error fetching transcripts:', err);
-            setError(err instanceof Error ? err.message : 'Failed to load transcripts');
-        } finally {
-            setLoading(false);
-        }
-    };
+        load();
+    }, []);
 
     const handleAddTranscript = async (data: TranscriptionRequest) => {
-
         try {
-            const res = await fetch('http://localhost:3001/api/transcribe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            });
+            const result = await startTranscription(data);
 
-            const result = await res.json();
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.details || err.error || 'Failed to start transcription job');
+            // Refresh the transcripts list after starting the job or receiving an immediate transcript
+            try {
+                const items = await fetchTranscripts();
+                setTranscripts(items);
+            } catch (err) {
+                console.warn('Failed to refresh transcripts after starting job', err);
             }
-            
+
             return result;
         } catch (error) {
             console.error('Failed to start transcription:', error);

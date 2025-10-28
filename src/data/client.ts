@@ -1,78 +1,84 @@
-import { Bill, Hearing } from '@/types/legislative';
+import type {
+  TranscriptListItem,
+  ClientResponse,
+  TranscriptionRequest,
+} from '../types/hearings';
 
-const API_BASE = '/api';
+const APP_API_BASE = 'http://localhost:3001/api';
 
-interface BillsIndex {
-  bills: Bill[];
-  fetched_at: string;
-  source_url: string;
-}
+export type KeytermRow = Array<string | null>;
 
-interface HearingsIndex {
-  hearings: Hearing[];
-  fetched_at: string;
-  source_url: string;
-}
-
-interface BillDetail extends Bill {
-  fetched_at: string;
-  source_url: string;
-  text?: string;
-  amendments?: unknown[];
-  history?: unknown[];
-}
-
-export async function getBills(year: number): Promise<Bill[]> {
+export async function fetchTranscripts(): Promise<TranscriptListItem[]> {
   try {
-    const response = await fetch(`${API_BASE}/${year}/bills/index.json`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch bills: ${response.statusText}`);
-    }
-    const data: BillsIndex = await response.json();
-    return data.bills;
-  } catch (error) {
-    console.error('Error fetching bills:', error);
+    const res = await fetch(`${APP_API_BASE}/transcripts`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.transcripts || [];
+  } catch (err) {
+    console.error('fetchTranscripts error:', err);
     return [];
   }
 }
 
-export async function getBill(id: string, year: number): Promise<BillDetail | null> {
+export async function startTranscription(payload: TranscriptionRequest): Promise<Record<string, unknown>> {
   try {
-    const response = await fetch(`${API_BASE}/${year}/bills/${id}.json`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch bill ${id}: ${response.statusText}`);
+    const res = await fetch(`${APP_API_BASE}/transcribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || data.details || `HTTP ${res.status}`);
     }
-    const data: BillDetail = await response.json();
     return data;
-  } catch (error) {
-    console.error(`Error fetching bill ${id}:`, error);
+  } catch (err) {
+    console.error('startTranscription error:', err);
+    throw err;
+  }
+}
+
+export async function fetchKeyterms(): Promise<KeytermRow[]> {
+  try {
+    const res = await fetch(`${APP_API_BASE}/sheet`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data as KeytermRow[];
+  } catch (err) {
+    console.error('fetchKeyterms error:', err);
+    return [];
+  }
+}
+
+export async function suggestKeyterm(payload: unknown): Promise<Record<string, unknown>> {
+  try {
+    const res = await fetch(`${APP_API_BASE}/sheet/suggest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  } catch (err) {
+    console.error('suggestKeyterm error:', err);
+    throw err;
+  }
+}
+
+export async function fetchTranscript(year: string, committee: string, billName: string, videoTitle: string): Promise<ClientResponse | null> {
+  try {
+    const res = await fetch(`${APP_API_BASE}/transcript/${year}/${committee}/${billName}/${videoTitle}`);
+    if (!res.ok) {
+      if (res.status === 404) return null;
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    return data as ClientResponse;
+  } catch (err) {
+    console.error('fetchTranscript error:', err);
     return null;
   }
-}
-
-export async function getHearings(year: number): Promise<Hearing[]> {
-  try {
-    const response = await fetch(`${API_BASE}/${year}/hearings/index.json`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch hearings: ${response.statusText}`);
-    }
-    const data: HearingsIndex = await response.json();
-    return data.hearings;
-  } catch (error) {
-    console.error('Error fetching hearings:', error);
-    return [];
-  }
-}
-
-export function getCurrentSession(): number {
-  return new Date().getFullYear();
-}
-
-export function getAvailableSessions(): number[] {
-  const current = getCurrentSession();
-  const sessions = [];
-  for (let year = 1999; year <= current; year++) {
-    sessions.push(year);
-  }
-  return sessions.reverse();
 }

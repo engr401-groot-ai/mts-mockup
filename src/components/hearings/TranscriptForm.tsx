@@ -108,7 +108,6 @@ const TranscriptForm: React.FC<TranscriptFormProps> = ({ onSubmit, onCancel }) =
                     description: 'Transcription completed successfully!',
                     duration: 4000,
                 });
-                window.dispatchEvent(new Event('transcript-updated'));
             }
         } catch (err) {
             console.error('Form submission error:', err);

@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import SuggestTermModal from './SuggestTermModal';
+import { fetchKeyterms, type KeytermRow } from '../../data/client';
+import type { ModalProps } from '../../types/ui';
 
-interface KeytermsModalProps {
-    open: boolean;
-    onClose: () => void;
-    // Optional: parent can provide a handler to open a standalone SuggestTermModal
+interface KeytermsModalProps extends ModalProps {
     onOpenSuggest?: () => void;
 }
 
@@ -14,7 +13,7 @@ interface KeytermsModalProps {
  * Modal that displays key terms and allows users to suggest new ones.
  */
 const KeytermsModal: React.FC<KeytermsModalProps> = ({ open, onClose, onOpenSuggest }) => {
-    const [rows, setRows] = useState<unknown[][]>([]);
+    const [rows, setRows] = useState<KeytermRow[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [view, setView] = useState<'list' | 'suggest'>('list');
@@ -32,8 +31,6 @@ const KeytermsModal: React.FC<KeytermsModalProps> = ({ open, onClose, onOpenSugg
 
     useEffect(() => {
         if (!open) return;
-        // notify other components that keyterms modal opened (so they can close)
-        window.dispatchEvent(new CustomEvent('keyterms-open'));
         if (view !== 'list') return;
 
         let mounted = true;
@@ -42,15 +39,9 @@ const KeytermsModal: React.FC<KeytermsModalProps> = ({ open, onClose, onOpenSugg
 
         (async () => {
             try {
-                const res = await fetch('http://localhost:3001/api/sheet');
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
+                const data = await fetchKeyterms();
                 if (!mounted) return;
-                if (!Array.isArray(data)) {
-                    setError('Unexpected sheet response');
-                    return;
-                }
-                setRows(data as unknown[][]);
+                setRows(data);
             } catch (err) {
                 if (!mounted) return;
                 setError(String(err instanceof Error ? err.message : err));
@@ -61,15 +52,6 @@ const KeytermsModal: React.FC<KeytermsModalProps> = ({ open, onClose, onOpenSugg
 
         return () => { mounted = false; };
     }, [open, view]);
-
-    // If another component opens the suggest-term modal, close this keyterms modal
-    useEffect(() => {
-        function onSuggestOpen() {
-            if (open) onClose();
-        }
-        window.addEventListener('suggest-term-open', onSuggestOpen as EventListener);
-        return () => window.removeEventListener('suggest-term-open', onSuggestOpen as EventListener);
-    }, [open, onClose]);
 
     if (!open) return null;
 
@@ -93,7 +75,6 @@ const KeytermsModal: React.FC<KeytermsModalProps> = ({ open, onClose, onOpenSugg
                                     onOpenSuggest();
                                 } else {
                                     setView('suggest');
-                                    window.dispatchEvent(new CustomEvent('keyterms-open'));
                                 }
                             }}
                             className="text-sm text-blue-600 hover:underline"

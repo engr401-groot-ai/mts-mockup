@@ -9,7 +9,6 @@ interface TranscriptTreeViewProps {
     transcripts: TranscriptListItem[];
 }
 
-// Tree node structure for hierarchical organization
 interface TreeNode {
     type: 'billType' | 'committee' | 'bill' | 'transcript';
     id: string;
