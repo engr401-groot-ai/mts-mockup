@@ -36,13 +36,7 @@ const HearingTranscript = () => {
         matches: [] 
     });
 
-    useEffect(() => {
-        if (year && committee && billName && videoTitle) {
-            fetchTranscript();
-        }
-    }, [year, committee, billName, videoTitle]);
-
-    const fetchTranscript = async () => {
+    const fetchTranscript = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
@@ -64,7 +58,13 @@ const HearingTranscript = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [year, committee, billName, videoTitle]);
+
+    useEffect(() => {
+        if (year && committee && billName && videoTitle) {
+            fetchTranscript();
+        }
+    }, [fetchTranscript, year, committee, billName, videoTitle]);
 
     const downloadTranscript = () => {
         if (!transcript?.fullText) {
