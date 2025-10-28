@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import SuggestTermModal from './SuggestTermModal';
-import { fetchKeyterms, type KeytermRow } from '../../data/client';
+import { fetchKeyterms, type Keyterm } from '../../data/client';
 import type { ModalProps } from '../../types/ui';
 
 interface KeytermsModalProps extends ModalProps {
@@ -13,7 +13,7 @@ interface KeytermsModalProps extends ModalProps {
  * Modal that displays key terms and allows users to suggest new ones.
  */
 const KeytermsModal: React.FC<KeytermsModalProps> = ({ open, onClose, onOpenSuggest }) => {
-    const [rows, setRows] = useState<KeytermRow[]>([]);
+    const [rows, setRows] = useState<Keyterm[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [view, setView] = useState<'list' | 'suggest'>('list');
@@ -97,7 +97,7 @@ const KeytermsModal: React.FC<KeytermsModalProps> = ({ open, onClose, onOpenSugg
                                 <textarea
                                     readOnly
                                     value={rows
-                                        .map(r => String((r && r[1]) || '').trim())
+                                        .map(r => String((r && r.term) || '').trim())
                                         .filter(Boolean)
                                         .join(', ')}
                                     className="w-full h-40 border rounded p-2 text-sm text-muted resize-none overflow-y-auto"

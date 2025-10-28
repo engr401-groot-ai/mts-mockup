@@ -20,7 +20,6 @@ const Hearings = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showAddForm, setShowAddForm] = useState(false);
-    
 
     useEffect(() => {
         const load = async () => {
@@ -43,8 +42,6 @@ const Hearings = () => {
     const handleAddTranscript = async (data: TranscriptionRequest) => {
         try {
             const result = await startTranscription(data);
-
-            // Refresh the transcripts list after starting the job or receiving an immediate transcript
             try {
                 const items = await fetchTranscripts();
                 setTranscripts(items);

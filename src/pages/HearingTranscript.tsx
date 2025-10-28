@@ -159,7 +159,7 @@ const HearingTranscript = () => {
                 <ErrorDisplay 
                         message={error}
                         onRetry={fetchTranscript}
-                    />
+                />
             </div>
         );
     }

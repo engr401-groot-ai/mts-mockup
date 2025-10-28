@@ -90,7 +90,6 @@ export const generateHearingId = (
 
     const date = hearingDate;
     const comm = committeeToSlug(committee);
-    const bills = validation.normalized.join('_');
     const roomSlug = room.toLowerCase().replace(/\s+/g, '');
     const period = ampm.toLowerCase();
 

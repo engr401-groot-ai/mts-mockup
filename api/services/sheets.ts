@@ -1,0 +1,42 @@
+import fs from 'fs';
+import { google } from 'googleapis';
+
+const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || '';
+if (!credentialsPath) console.warn('Google Application Credentials not found');
+
+const credentials = credentialsPath ? JSON.parse(fs.readFileSync(credentialsPath, 'utf-8')) : undefined;
+
+const auth = new google.auth.GoogleAuth({
+  credentials,
+  scopes: ['https://www.googleapis.com/auth/spreadsheets']
+});
+
+const sheetsClient = google.sheets({ version: 'v4', auth });
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
+if (!SPREADSHEET_ID) console.warn('Spreadsheet ID not found');
+
+export async function getTermsFromSheet() {
+  const result = await sheetsClient.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Terms!A2:C' });
+
+  const rows = result.data.values || [];
+
+  const formatted = rows.map(([category, term, aliases]) => ({
+    category: category || '',
+    term: term || '',
+    aliases: aliases
+      ? String(aliases).replace(/[,;:"']/g, '').split(/\s+/).map(a => a.trim()).filter(a => a.length > 0)
+      : []
+  }));
+  return formatted;
+}
+
+export async function appendSuggestions(rows: (string | number | boolean | null)[][]) {
+  await sheetsClient.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'Suggestions!A:G',
+    valueInputOption: 'RAW',
+    requestBody: { values: rows }
+  });
+}
+
+export default { getTermsFromSheet, appendSuggestions };
