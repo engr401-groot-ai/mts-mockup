@@ -1,21 +1,12 @@
-/**
- * api/services/pythonProxy.ts
- *
- * Thin proxy for communicating with the Python transcription service.
- * All functions wrap axios calls and return deserialized JSON.
- * - postTranscribe(payload): POST /transcribe
- * - getTranscriptByFolder(encodedFolderPath): GET /transcript/:folder
- * - listTranscripts(): GET /list-transcripts
- * - pythonHealth(timeout): GET /health
- *
- * Config via env: PYTHON_API_URL (default http://localhost:5001)
- */
 import axios from 'axios';
 import type { PythonAPIResponse, TranscriptionRequest } from '../../src/types/hearings';
 
-const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:5001';
+const PYTHON_API_URL = process.env.PYTHON_API_URL || `http://127.0.0.1:${process.env.PYTHON_PORT || '3001'}`;
 const REQUEST_TIMEOUT = Number(process.env.PYTHON_REQUEST_TIMEOUT_MS || '3600000');
 
+/**
+ * Forwards a transcription request to the Python API.
+ */
 export async function postTranscribe(payload: TranscriptionRequest) {
   const response = await axios.post<PythonAPIResponse>(
     `${PYTHON_API_URL}/transcribe`,
@@ -25,6 +16,9 @@ export async function postTranscribe(payload: TranscriptionRequest) {
   return response.data;
 }
 
+/**
+ * Forwards a request to get a transcript by folder path to the Python API.
+ */
 export async function getTranscriptByFolder(encodedFolderPath: string) {
   const response = await axios.get<PythonAPIResponse>(
     `${PYTHON_API_URL}/transcript/${encodedFolderPath}`
@@ -32,14 +26,25 @@ export async function getTranscriptByFolder(encodedFolderPath: string) {
   return response.data;
 }
 
+/**
+ * Forwards a request to list all transcripts to the Python API.
+ */
 export async function listTranscripts() {
   const response = await axios.get(`${PYTHON_API_URL}/list-transcripts`);
   return response.data;
 }
 
+/**
+ * Forwards a request to check the health of the Python API.
+ */
 export async function pythonHealth(timeout = 5000) {
-  const response = await axios.get(`${PYTHON_API_URL}/health`, { timeout });
-  return response.data;
+  try {
+    const response = await axios.get(`${PYTHON_API_URL}/health`, { timeout });
+    return response.data;
+  } catch (err: any) {
+    console.error(`pythonHealth: failed to reach ${PYTHON_API_URL}/health ->`, err?.message || err);
+    throw err;
+  }
 }
 
 export default { postTranscribe, getTranscriptByFolder, listTranscripts, pythonHealth };

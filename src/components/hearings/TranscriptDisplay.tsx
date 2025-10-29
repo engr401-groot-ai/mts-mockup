@@ -3,6 +3,7 @@ import TranscriptDropdown from './TranscriptDropdown';
 import KeytermsModal from './KeyTermsModal';
 import SuggestTermModal from './SuggestTermModal';
 import { formatTimestamp } from '../../lib/formatUtils';
+import { fetchMentions } from '../../data/client';
 import type { TranscriptSegment, SearchMatch } from '../../types/hearings';
 
 interface TranscriptProps {
@@ -13,6 +14,10 @@ interface TranscriptProps {
     currentSearchIndex?: number;
     onSearchResultsChange?: (results: { total: number; matches: SearchMatch[] }) => void;
     onDownload?: () => void;
+    year?: string;
+    committee?: string;
+    billName?: string;
+    videoTitle?: string;
 }
 
 /**
@@ -32,11 +37,32 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
     currentSearchIndex = 0,
     onSearchResultsChange,
     onDownload,
+    year,
+    committee,
+    billName,
+    videoTitle,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [activeTab, setActiveTab] = useState<'fullText' | 'mentions'>('fullText');
     const [showKeytermsModal, setShowKeytermsModal] = useState(false);
     const [showSuggestModal, setShowSuggestModal] = useState(false);
+    const [mentions, setMentions] = useState<Array<any>>([]);
+    const [mentionsLoading, setMentionsLoading] = useState(false);
+
+    useEffect(() => {
+        let mounted = true;
+        async function load() {
+            if (activeTab !== 'mentions') return;
+            if (!year || !committee || !billName || !videoTitle) return;
+            setMentionsLoading(true);
+            const res = await fetchMentions(year, committee, billName, videoTitle);
+            if (!mounted) return;
+            setMentionsLoading(false);
+            setMentions(res?.mentions || []);
+        }
+        load();
+        return () => { mounted = false; };
+    }, [activeTab, year, committee, billName, videoTitle]);
 
     // Calculate all search matches across all segments
     const searchMatches = useMemo(() => {
@@ -178,27 +204,49 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
             
             {/* View tabs */}
             <div className="border-b">
-                <div className="flex">
-                    <button
-                        onClick={() => setActiveTab('fullText')}
-                        className={`px-6 py-3 font-medium text-sm transition-colors relative ${
-                            activeTab === 'fullText'
-                                ? 'text-blue-600 border-b-2 border-blue-600'
-                                : 'text-gray-600 hover:text-gray-800'
-                        }`}
-                    >
-                        Full Text
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('mentions')}
-                        className={`px-6 py-3 font-medium text-sm transition-colors relative ${
-                            activeTab === 'mentions'
-                                ? 'text-blue-600 border-b-2 border-blue-600'
-                                : 'text-gray-600 hover:text-gray-800'
-                        }`}
-                    >
-                        Mentions
-                    </button>
+                <div className="flex items-center justify-between">
+                    <div className="flex">
+                        <button
+                            onClick={() => setActiveTab('fullText')}
+                            className={`px-6 py-3 font-medium text-sm transition-colors relative ${
+                                activeTab === 'fullText'
+                                    ? 'text-blue-600 border-b-2 border-blue-600'
+                                    : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                        >
+                            Full Text
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('mentions')}
+                            className={`px-6 py-3 font-medium text-sm transition-colors relative ${
+                                activeTab === 'mentions'
+                                    ? 'text-blue-600 border-b-2 border-blue-600'
+                                    : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                        >
+                            Mentions
+                        </button>
+                    </div>
+
+                    {/* Legend shown when Mentions tab is active */}
+                    {activeTab === 'mentions' && (
+                        <div className="pr-4">
+                            <div className="flex items-center gap-3 text-sm text-gray-600">
+                                <div className="text-xs text-gray-500">Legend:</div>
+                                <div className="inline-flex items-center gap-2">
+                                    <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-800">
+                                        Explicit
+                                    </span>
+                                    <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-100 text-yellow-800">
+                                        Fuzzy
+                                    </span>
+                                    <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-100 text-red-800">
+                                        Implicit
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
             
@@ -227,12 +275,62 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                     ))}
                 </div>
             ) : (
-                <div className="flex-1 overflow-y-auto p-4">
-                    <div className="flex items-center justify-center h-full">
-                        <div className="text-center">
-                            <p className="text-gray-500 mb-2">Placeholder: mentions view (implicit/explicit mentions display to be implemented)</p>
+                <div className="flex-1 overflow-y-auto space-y-2 p-4">
+                    {mentionsLoading ? (
+                        <div className="flex items-center justify-center h-full">
+                            <div className="text-center text-gray-500">Loading mentions...</div>
                         </div>
-                    </div>
+                    ) : (
+                        <>
+                            {mentions && mentions.length > 0 ? (
+                                <div className="space-y-2">
+                                    {mentions.map((m, idx) => {
+                                        const key = `${m.term}-${m.segmentId}-${idx}`;
+                                        const isExplicit = m.matchType === 'explicit';
+                                        const isFuzzy = m.matchType === 'fuzzy';
+                                            const borderClass = isExplicit ? 'border-l-4 border-green-400 bg-green-50' : isFuzzy ? 'border-l-4 border-yellow-400 bg-yellow-50' : 'border-l-4 border-red-400 bg-red-50';
+                                            const displayType = isExplicit ? 'Explicit' : isFuzzy ? 'Fuzzy' : 'Implicit';
+
+                                        return (
+                                            <div key={key} className={`flex gap-3 p-2 rounded-lg transition-colors hover:bg-gray-50 ${borderClass}`}>
+                                                <button
+                                                    onClick={() => onTimestampClick(m.timestamp)}
+                                                    className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm whitespace-nowrap font-medium min-w-[3rem] text-left"
+                                                >
+                                                    {formatTimestamp(m.timestamp)}
+                                                </button>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <div className="text-sm font-medium">{m.term}</div>
+                                                            <div className="text-xs text-gray-500 mt-1">
+                                                                <span className={`${isExplicit ? 'bg-green-200/80 text-green-900' : isFuzzy ? 'bg-yellow-200/80 text-yellow-900' : 'bg-red-200/80 text-red-900'} px-1 py-0.5 rounded`}>{m.matchedText}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="ml-4 text-right">
+                                                            <div>
+                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${isExplicit ? 'bg-green-100 text-green-800' : isFuzzy ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                                                                    <span className={`inline-block w-2 h-2 rounded-full ${isExplicit ? 'bg-green-400' : isFuzzy ? 'bg-yellow-400' : 'bg-red-400'}`} />
+                                                                    {displayType}
+                                                                </span>
+                                                            </div>
+                                                            
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-center h-full">
+                                    <div className="text-center">
+                                        <p className="text-gray-500 mb-2">No mentions found. You can extract mentions via the API.</p>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
             )}
             <KeytermsModal

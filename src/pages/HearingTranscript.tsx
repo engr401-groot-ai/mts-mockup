@@ -218,6 +218,10 @@ const HearingTranscript = () => {
                                 currentSearchIndex={searchResults.current - 1}
                                 onSearchResultsChange={handleSearchResultsChange}
                                 onDownload={downloadTranscript}
+                                year={year}
+                                committee={committee}
+                                billName={billName}
+                                videoTitle={videoTitle}
                             />
                         ) : (
                             <div className="p-4">

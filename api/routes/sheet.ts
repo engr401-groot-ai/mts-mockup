@@ -1,6 +1,6 @@
 import express from 'express';
 import type { Request, Response } from 'express';
-import { getTermsFromSheet, appendSuggestions } from '../services/sheets';
+import { getTermsFromSheet, appendSuggestions } from '../services/gsheets';
 
 const router = express.Router();
 

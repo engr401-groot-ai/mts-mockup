@@ -1,14 +1,3 @@
-/**
- * api/services/sheets.ts
- *
- * Helpers to read terms from a Google Sheets 'Terms' sheet and append
- * suggestion rows to a 'Suggestions' sheet. This centralizes all Sheets
- * access for use by routes (mentions, suggestions UI, etc.).
- *
- * Requires env:
- * - GOOGLE_APPLICATION_CREDENTIALS (path to service account JSON)
- * - SPREADSHEET_ID
- */
 import fs from 'fs';
 import { google } from 'googleapis';
 

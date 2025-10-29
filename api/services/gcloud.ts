@@ -1,12 +1,3 @@
-/**
- * api/services/gcloud.ts
- *
- * Small helper for reading and writing JSON objects to Google Cloud Storage.
- * - uploadJson(path, payload): saves JSON to bucket under `path`
- * - getJson(path): returns parsed JSON or null if not found
- *
- * Requires env var: GCS_BUCKET_NAME
- */
 import { Storage } from '@google-cloud/storage';
 
 const BUCKET = process.env.GCS_BUCKET_NAME || process.env.GCS_BUCKET || '';
@@ -14,6 +5,9 @@ if (!BUCKET) console.warn('GCS Bucket Name not found');
 
 const storage = new Storage();
 
+/**
+ * Upload a JS object as pretty-printed JSON to GCS and return the gs:// URL
+ */
 export async function uploadJson(path: string, payload: unknown) {
   const bucket = storage.bucket(BUCKET);
   const file = bucket.file(path);
@@ -21,6 +15,9 @@ export async function uploadJson(path: string, payload: unknown) {
   return `gs://${BUCKET}/${path}`;
 }
 
+/**
+ * Read a JSON file from GCS and parse to an object. Returns null if not found.
+ */
 export async function getJson(path: string) {
   const bucket = storage.bucket(BUCKET);
   const file = bucket.file(path);

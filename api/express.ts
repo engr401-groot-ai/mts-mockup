@@ -1,8 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -31,7 +28,7 @@ app.listen(PORT, () => {
   console.log('Node.js+Express Server Started');
   console.log('='.repeat(60));
   console.log('Port:', PORT);
-  console.log('Python API:', process.env.PYTHON_API_URL || 'http://localhost:5001');
+  console.log('Python API:', process.env.PYTHON_API_URL || 'http://127.0.0.1:5001');
   console.log('='.repeat(60) + '\n');
   pythonHealth()
     .then((response) => {
@@ -40,8 +37,8 @@ app.listen(PORT, () => {
       console.log('   Bucket:', response.gcs_bucket);
       console.log('   Chunk Length:', response.chunk_length_minutes, 'minutes');
     })
-    .catch(() => {
+    .catch((err) => {
       console.log('   WARNING: Python API is not reachable');
-      console.log('   Make sure to run: python3 api/whisper_to_gcs.py');
+      console.error('   pythonHealth error ->', (err && err.message) || err);
     });
 });

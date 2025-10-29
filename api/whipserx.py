@@ -2,17 +2,16 @@ import os
 import re
 import sys
 import math
-import uuid
 import json
 import subprocess
 import threading
-from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
 import tempfile
 import shutil
 import time
-
+from dotenv import load_dotenv
+from pathlib import Path
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -35,6 +34,8 @@ Notes:
     directories. Production deployment should add rate limiting, job queue
     management, timeout handling, and robust logging.
 """
+
+load_dotenv(Path(__file__).resolve().parents[1] / '.env', override=True)
 
 # Configurations (can be adjusted as needed)
 MAX_VIDEO_DURATION_SECONDS = 10800
@@ -586,7 +587,7 @@ def list_transcripts():
         }), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5001))
+    port = int(os.getenv('PYTHON_PORT', '5001'))
     print(f"\n{'='*60}")
     print(f"Starting Transcription API on port {port}")
     print(f"Model: {MODEL_NAME}")

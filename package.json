@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "postbuild": "cp dist/index.html dist/404.html"
+    "postbuild": "cp dist/index.html dist/404.html",
+    "start:express": "tsx api/start-server.ts",
+    "start:python": "sh -c \"PYTHON_PORT=3001 python api/whipserx.py\""
   },
   "dependencies": {
     "@google-cloud/speech": "^7.2.1",
@@ -56,6 +58,7 @@
     "embla-carousel-react": "^8.6.0",
     "express": "^5.1.0",
     "fs": "^0.0.1-security",
+    "fuse.js": "^7.1.0",
     "googleapis": "^164.1.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.462.0",
@@ -108,5 +111,5 @@
   "bugs": {
     "url": "https://github.com/sdixon4/GROOT-AI/issues"
   },
-  "packageManager": "npm@10"
+  "packageManager": "npm@10.0.0"
 }

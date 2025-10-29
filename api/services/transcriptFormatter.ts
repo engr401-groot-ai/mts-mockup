@@ -1,5 +1,8 @@
 import type { PythonAPIResponse, ClientResponse } from '../../src/types/hearings';
 
+/**
+ * Format the response from the Python transcription service into the client-friendly structure.
+ */
 export function formatTranscriptResponse(data: PythonAPIResponse): ClientResponse {
   const transcript = data.transcript ?? { segments: [], text: '', model: '', processing_time: 0, total_segments: 0, language: '' };
 
