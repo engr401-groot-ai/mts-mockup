@@ -1,3 +1,14 @@
+/**
+ * api/services/sheets.ts
+ *
+ * Helpers to read terms from a Google Sheets 'Terms' sheet and append
+ * suggestion rows to a 'Suggestions' sheet. This centralizes all Sheets
+ * access for use by routes (mentions, suggestions UI, etc.).
+ *
+ * Requires env:
+ * - GOOGLE_APPLICATION_CREDENTIALS (path to service account JSON)
+ * - SPREADSHEET_ID
+ */
 import fs from 'fs';
 import { google } from 'googleapis';
 
@@ -15,6 +26,9 @@ const sheetsClient = google.sheets({ version: 'v4', auth });
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '';
 if (!SPREADSHEET_ID) console.warn('Spreadsheet ID not found');
 
+/**
+ * Reads Terms!A2:C and returns rows as objects { category, term, aliases[] }
+ */
 export async function getTermsFromSheet() {
   const result = await sheetsClient.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Terms!A2:C' });
 
@@ -30,6 +44,9 @@ export async function getTermsFromSheet() {
   return formatted;
 }
 
+/**
+ * Append suggestion rows to Suggestions!A:G. Expects rows formatted as arrays.
+ */
 export async function appendSuggestions(rows: (string | number | boolean | null)[][]) {
   await sheetsClient.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,

@@ -1,3 +1,15 @@
+/**
+ * api/services/pythonProxy.ts
+ *
+ * Thin proxy for communicating with the Python transcription service.
+ * All functions wrap axios calls and return deserialized JSON.
+ * - postTranscribe(payload): POST /transcribe
+ * - getTranscriptByFolder(encodedFolderPath): GET /transcript/:folder
+ * - listTranscripts(): GET /list-transcripts
+ * - pythonHealth(timeout): GET /health
+ *
+ * Config via env: PYTHON_API_URL (default http://localhost:5001)
+ */
 import axios from 'axios';
 import type { PythonAPIResponse, TranscriptionRequest } from '../../src/types/hearings';
 
