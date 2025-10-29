@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useMemo, useState } from 'react';
 import TranscriptDropdown from './TranscriptDropdown';
 import KeytermsModal from './KeyTermsModal';
 import SuggestTermModal from './SuggestTermModal';
+import ExtractButton from './ExtractButton';
 import { formatTimestamp } from '../../lib/formatUtils';
 import { fetchMentions, fetchKeyterms, extractMentions } from '../../data/client';
 import type { TranscriptSegment, SearchMatch } from '../../types/hearings';
@@ -48,7 +49,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
     const [showSuggestModal, setShowSuggestModal] = useState(false);
     const [mentions, setMentions] = useState<Array<any>>([]);
     const [mentionsLoading, setMentionsLoading] = useState(false);
-    const [extractLoading, setExtractLoading] = useState(false);
+    // extractLoading is handled inside ExtractButton
 
     useEffect(() => {
         let mounted = true;
@@ -246,27 +247,15 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                                     </span>
                                 </div>
                                 <div>
-                                    <button
-                                        onClick={async () => {
-                                            if (!year || !committee || !billName || !videoTitle) return;
-                                            try {
-                                                setExtractLoading(true);
-                                                const keyterms = await fetchKeyterms();
-                                                const resp = await extractMentions(year, committee, billName, videoTitle, keyterms, segments);
-                                                if (resp && Array.isArray(resp.mentions)) {
-                                                    setMentions(resp.mentions);
-                                                }
-                                            } catch (err) {
-                                                console.error('Failed to extract mentions:', err);
-                                            } finally {
-                                                setExtractLoading(false);
-                                            }
-                                        }}
-                                        className="ml-4 inline-flex items-center gap-2 px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
-                                        disabled={extractLoading}
-                                    >
-                                        {extractLoading ? 'Extracting...' : 'Extract'}
-                                    </button>
+                                        <ExtractButton
+                                            year={year}
+                                            committee={committee}
+                                            billName={billName}
+                                            videoTitle={videoTitle}
+                                            segments={segments}
+                                            onExtracted={(m) => { if (Array.isArray(m)) setMentions(m); }}
+                                            className="ml-4 inline-flex items-center gap-2 px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+                                        />
                                 </div>
                             </div>
                         </div>
@@ -310,13 +299,18 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                                 <div className="space-y-2">
                                     {mentions.map((m, idx) => {
                                         const key = `${m.term}-${m.segmentId}-${idx}`;
+                                        const segment = segments.find(s => s.id === m.segmentId as number);
+
                                         const isExplicit = m.matchType === 'explicit';
                                         const isFuzzy = m.matchType === 'fuzzy';
-                                            const borderClass = isExplicit ? 'border-l-4 border-green-400 bg-green-50' : isFuzzy ? 'border-l-4 border-yellow-400 bg-yellow-50' : 'border-l-4 border-red-400 bg-red-50';
-                                            const displayType = isExplicit ? 'Explicit' : isFuzzy ? 'Fuzzy' : 'Implicit';
+
+                                        const termHighlightClass = 
+                                            isExplicit ? 'bg-green-100 text-green-800'
+                                            : isFuzzy ? 'bg-yellow-100 text-yellow-800'
+                                            : 'bg-red-100 text-red-800';
 
                                         return (
-                                            <div key={key} className={`flex gap-3 p-2 rounded-lg transition-colors hover:bg-gray-50 ${borderClass}`}>
+                                            <div key={key} className={`flex gap-3 p-2 rounded-lg transition-colors hover:bg-gray-50`}>
                                                 <button
                                                     onClick={() => onTimestampClick(m.timestamp)}
                                                     className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm whitespace-nowrap font-medium min-w-[3rem] text-left"
@@ -326,19 +320,12 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                                                 <div className="flex-1">
                                                     <div className="flex items-center justify-between">
                                                         <div>
-                                                            <div className="text-sm font-medium">{m.term}</div>
-                                                            <div className="text-xs text-gray-500 mt-1">
-                                                                <span className={`${isExplicit ? 'bg-green-200/80 text-green-900' : isFuzzy ? 'bg-yellow-200/80 text-yellow-900' : 'bg-red-200/80 text-red-900'} px-1 py-0.5 rounded`}>{m.matchedText}</span>
+                                                            <div className="text-sm font-bold">
+                                                                <span className={`px-1 rounded ${termHighlightClass}`}>{m.term}</span>
                                                             </div>
-                                                        </div>
-                                                        <div className="ml-4 text-right">
-                                                            <div>
-                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${isExplicit ? 'bg-green-100 text-green-800' : isFuzzy ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                                                                    <span className={`inline-block w-2 h-2 rounded-full ${isExplicit ? 'bg-green-400' : isFuzzy ? 'bg-yellow-400' : 'bg-red-400'}`} />
-                                                                    {displayType}
-                                                                </span>
-                                                            </div>
-                                                            
+                                                            <p className="text-gray-800 leading-relaxed mt-1">
+                                                                {segment ? highlightText(segment.text, segment.id) : m.matchedText}
+                                                            </p>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -349,7 +336,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                             ) : (
                                 <div className="flex items-center justify-center h-full">
                                     <div className="text-center">
-                                        <p className="text-gray-500 mb-2">No mentions found. You can extract mentions via the API.</p>
+                                        <p className="text-gray-500 mb-2">No mentions found.</p>
                                     </div>
                                 </div>
                             )}

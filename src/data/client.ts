@@ -2,8 +2,8 @@ import type {
   TranscriptListItem,
   ClientResponse,
   TranscriptionRequest,
-  Keyterm
 } from '../types/hearings';
+import type { Keyterm } from '../types/mentions';
 
 const EXPRESS_BASE = ((import.meta.env.VITE_API_EXPRESS as string | undefined) || '') + '/api';
 const PYTHON_BASE = import.meta.env.VITE_API_PYTHON as string | undefined;
@@ -174,7 +174,7 @@ export async function extractMentions(
 ): Promise<{ mentions: any[]; gcs_path?: string } | null> {
   try {
     const payload = { year, committee, billName, videoTitle, terms, segments, options };
-  const res = await fetch(`${EXPRESS_BASE}/mentions/extract`, {
+    const res = await fetch(`${EXPRESS_BASE}/mentions/extract`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

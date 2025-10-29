@@ -28,8 +28,8 @@ router.post('/extract', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Run mention extraction
-    const mentions = await findMentions(terms, segments, options || {});
+  // Run mention extraction
+  const mentions = await findMentions(terms, segments);
 
     // Cache to GCS
     const folderPath = `${year}/${committee}/${billName}/${videoTitle}`.replace(/ /g, '_');

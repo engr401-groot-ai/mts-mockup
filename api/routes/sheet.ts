@@ -19,7 +19,7 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Terms!A2:C'
+      range: 'Keyterms!A2:C'
     });
 
     const rows = result.data.values || [];

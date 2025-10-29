@@ -38,7 +38,11 @@ function makeId(term: string, segmentId: number, timestamp: number) {
  * Normalizes a string by normalizing its Unicode, lowercasing, and trimming whitespace.
  */
 function norm(s = '') {
-  return s.normalize('NFKC').toLowerCase().trim();
+  return s
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 /**
@@ -69,7 +73,7 @@ async function batchGetEmbeddings(texts: string[]): Promise<number[][]> {
  * Computes the cosine similarity between two vectors. (Used for embeddings matching.)
  * TODO?: Convert to use vector or ann
  */
-export function cosineSimilarity(vecA: number[], vecB: number[]): number {
+function cosineSimilarity(vecA: number[], vecB: number[]): number {
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < vecA.length; i++) {
     dot += vecA[i] * vecB[i];
@@ -84,30 +88,60 @@ export function cosineSimilarity(vecA: number[], vecB: number[]): number {
  * Strategy 1. Explicit matches using regex
  * Uses: Direct names, acronyms, aliases
  */
-
-export function findExplicitMatches(terms: Term[], segments: Segment[]): Mention[] {
+function findExplicitMatches(terms: Term[], segments: Segment[]): Mention[] {
   const mentions: Mention[] = [];
-
-  const normSegments = segments.map(s => ({ ...s, textNorm: norm(s.text) }));
+  const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   for (const term of terms) {
-    const variants = [term.text, ...(term.aliases || [])].map(v => norm(v));
-    for (const seg of normSegments) {
+    const variants = [term.text, ...(term.aliases || [])];
+
+    for (const segment of segments) {
+      const segmentNorm = norm(segment.text);
+      let matched = false;
+
       for (const variant of variants) {
-        const pattern = ` ${variant} `;
-        if (seg.textNorm.includes(pattern) || seg.textNorm.startsWith(variant + ' ') || seg.textNorm.endsWith(' ' + variant) || seg.textNorm === variant) {
-          mentions.push({
-            id: makeId(term.text, seg.id, seg.start),
-            termId: term.id,
-            term: term.text,
-            matchedText: seg.text,
-            segmentId: seg.id,
-            timestamp: seg.start,
-            score: 1.0,
-            matchType: 'explicit'
-          });
-          break;
+        if (matched) break;
+        const variantRaw = String(variant || '').trim();
+        if (!variantRaw) continue;
+        const variantNorm = norm(variantRaw);
+
+        // Helper: detect acronym-like variants (e.g. RCUH, BOR)
+        const isAcronym = /^[A-Z0-9]{2,6}$/.test(variantRaw.replace(/[^A-Za-z0-9]/g, '')) || /^[A-Z]{2,6}$/.test(variantRaw);
+
+        // Skip overly-generic single words unless they're acronyms or reasonably long
+        const tokens = variantNorm.split(/\s+/).filter(Boolean);
+        if (tokens.length === 1 && tokens[0].length < 3 && !isAcronym) continue;
+
+        // For Hawaii-related short phrases, require context (e.g. "university")
+        const isHawaiiRelated = tokens.some(t => ['hawaii', 'manoa', 'hilo', 'oahu', 'maui', 'kauai', 'west', 'w oahu', 'west oahu'].includes(t));
+        if (isHawaiiRelated && tokens.length < 2 && !isAcronym) {
+          if (!/\buniversity\b/i.test(segmentNorm)) continue;
         }
+
+        // Build a Unicode-aware token boundary regex on the normalized text.
+        // We match against the normalized segment to ensure diacritics/case-ins
+        // don't interfere, but we use \b-like lookarounds for Unicode letters.
+        const pattern = new RegExp(`(?<!\\p{L})${escapeRegex(variantNorm)}(?!\\p{L})`, 'u');
+        const match = segmentNorm.match(pattern);
+        if (!match) continue;
+
+        // Context validation: reject false positives that are preceded by generic
+        // organizational phrases which indicate the segment is listing groups.
+        const beforeMatch = segmentNorm.slice(Math.max(0, (match.index || 0) - 30), match.index || 0);
+        const rejectPatterns = [/\b(county|tax|foundation|chamber|state|federal|dept|department|office|city|committee)\s+(of\s+)?$/i];
+        if (rejectPatterns.some(p => p.test(beforeMatch))) continue;
+
+        mentions.push({
+          id: makeId(term.text, segment.id, segment.start),
+          termId: term.id,
+          term: term.text,
+          matchedText: match[0],
+          segmentId: segment.id,
+          timestamp: segment.start,
+          score: 1.0,
+          matchType: 'explicit'
+        });
+        matched = true;
       }
     }
   }
@@ -120,63 +154,85 @@ export function findExplicitMatches(terms: Term[], segments: Segment[]): Mention
  * Uses: Misspellings, minor variations, errors in transcription
  * Options can be tuned for sensitivity/specificity.
  */
-export function findFuzzyMentions(
+function findFuzzyMentions(
   terms: Term[],
   segments: Segment[],
   alreadyMatched: Set<string>,
   options = {
-    threshold: 0.3,
-    distance: 100,
-    minMatchCharLength: 3,
+    threshold: 0.12,
+    distance: 50,
+    minMatchCharLength: 5,
     includeScore: true,
   }
 ): Mention[] {
   const mentions: Mention[] = [];
 
+  // Prefer multi-word variants, but include single-word variants if they are
+  // acronym-like or reasonably long (to cover codes like '304a' or 'RCUH').
   const explicitTerms = terms.filter(t => t.isExplicit !== false);
-
-  // Prepare corpus of term variants (normalized) for searching
   const searchCorpus: Array<{ term: Term; variant: string }> = [];
   for (const term of explicitTerms) {
     const variants = [term.text, ...(term.aliases || [])];
     for (const variant of variants) {
-      searchCorpus.push({ term, variant: norm(variant) });
+      const vRaw = String(variant || '').trim();
+      if (!vRaw) continue;
+      const vNorm = norm(vRaw);
+      const tokens = vNorm.split(/\s+/).filter(Boolean);
+      const isAcronym = /^[A-Z0-9]{2,6}$/.test(vRaw.replace(/[^A-Za-z0-9]/g, '')) || /^[A-Z]{2,6}$/.test(vRaw);
+      if (tokens.length >= 2 || tokens[0].length >= 4 || isAcronym) {
+        searchCorpus.push({ term, variant: vNorm });
+      }
     }
   }
 
   const fuse = new Fuse(searchCorpus, {
     keys: ['variant'],
-    ...options
+    threshold: options.threshold,
+    distance: options.distance,
+    includeScore: options.includeScore,
+    minMatchCharLength: options.minMatchCharLength
   });
 
   for (const segment of segments) {
-    const segKey = `${segment.id}`;
+    if (alreadyMatched.has(`${segment.id}`)) continue;
 
-    if (alreadyMatched.has(segKey)) continue;
+    const words = segment.text.split(/\s+/);
 
-  const words = segment.text.split(/\s+/);
-  const segTextNorm = norm(segment.text);
-
+    // Use longer phrases (3-5 words)
     for (let i = 0; i < words.length; i++) {
       const phrases = [
-        words[i],
-        words.slice(i, i + 2).join(' '),
-        words.slice(i, i + 3).join(' ')
+        words.slice(i, i + 3).join(' '),
+        words.slice(i, i + 4).join(' '),
+        words.slice(i, i + 5).join(' ')
       ];
 
       for (const phrase of phrases) {
-        if (phrase.length < 3) continue;
+        const phraseNorm = norm(phrase);
+        if (phraseNorm.length < options.minMatchCharLength) continue;
 
-        const results = fuse.search(norm(phrase));
+        const results = fuse.search(phraseNorm);
 
         if (results.length > 0 && results[0].score! < options.threshold) {
           const match = results[0];
-          const term = match.item.term;
+
+          // Require significant token overlap (at least 66%)
+          const phraseTokens = new Set(phraseNorm.split(/\s+/));
+          const variantTokens = new Set(match.item.variant.split(/\s+/));
+          let overlap = 0;
+          for (const t of phraseTokens) if (variantTokens.has(t)) overlap++;
+          
+          const overlapRatio = overlap / Math.min(phraseTokens.size, variantTokens.size);
+          if (overlapRatio < 0.66) continue;
+
+          // Require "university" if Hawaii-related
+          if (/hawaii|manoa|hilo/.test(phraseNorm) && !/university/.test(phraseNorm)) {
+            continue;
+          }
 
           mentions.push({
-            id: makeId(term.text, segment.id, segment.start),
-            termId: term.id,
-            term: term.text,
+            id: makeId(match.item.term.text, segment.id, segment.start),
+            termId: match.item.term.id,
+            term: match.item.term.text,
             matchedText: phrase,
             segmentId: segment.id,
             timestamp: segment.start,
@@ -197,7 +253,7 @@ export function findFuzzyMentions(
  * Uses: Contextual references, implied mentions, related concepts
  * TODO?: Cap number of segments or terms to control cost/latency
  */
-export async function findImplicitMentions(
+async function findImplicitMentions(
   terms: Term[],
   segments: Segment[],
   alreadyMatched: Set<string>,
@@ -290,65 +346,59 @@ function deduplicateMentions(mentions: Mention[]): Mention[] {
 /**
  * Main function to find mentions using all strategies.
  */
+const DEFAULT_FUZZY_THRESHOLD = 0.2;
+const DEFAULT_IMPLICIT_THRESHOLD = 0.75;
+
 export async function findMentions(
   terms: Term[],
-  segments: Segment[],
-  options = {
-    useExplicit: true,
-    useFuzzy: true,
-    useImplicit: true,
-    fuzzyThreshold: 0.3,
-    implicitThreshold: 0.75,
-  }
+  segments: Segment[]
 ): Promise<Mention[]> {
   const allMentions: Mention[] = [];
   const matchedSegmentIds = new Set<string>();
 
-  console.log(`\nProcessing ${terms.length} terms against ${segments.length} segments...`);
+  const normalizedTerms: Term[] = (terms || []).map((t: any) => ({
+    id: t.id || t.term || t.text || undefined,
+    text: (t.text && String(t.text)) || (t.term && String(t.term)) || '',
+    aliases: Array.isArray(t.aliases) ? t.aliases : (typeof t.aliases === 'string' ? t.aliases.split(/[,;\s]+/).map((a: string)=>a.trim()).filter(Boolean) : (t.aliases ? [String(t.aliases)] : [])),
+    category: t.category || undefined,
+    isExplicit: typeof t.isExplicit === 'boolean' ? t.isExplicit : undefined,
+  }));
 
-  if (options.useExplicit) {
-    console.log('\n[1/3] Finding explicit matches...');
-    const explicit = findExplicitMatches(terms, segments);
+  console.log(`\nProcessing ${normalizedTerms.length} terms against ${segments.length} segments...`);
 
-    console.log(`   Found ${explicit.length} explicit mentions.`);
+  console.log('\n[1/3] Finding explicit matches...');
+  const explicit = findExplicitMatches(normalizedTerms, segments);
+  console.log(`   Found ${explicit.length} explicit mentions.`);
+  allMentions.push(...explicit);
+  explicit.forEach(m => matchedSegmentIds.add(`${m.segmentId}`));
 
-    allMentions.push(...explicit);
-    explicit.forEach(m => matchedSegmentIds.add(`${m.segmentId}`));
-  }
+  console.log('\n[2/3] Finding fuzzy matches...');
+  const fuzzy = findFuzzyMentions(
+    normalizedTerms,
+    segments,
+    matchedSegmentIds,
+    {
+      threshold: DEFAULT_FUZZY_THRESHOLD,
+      distance: 50,
+      minMatchCharLength: 5,
+      includeScore: true,
+    }
+  );
+  console.log(`   Found ${fuzzy.length} fuzzy mentions.`);
+  allMentions.push(...fuzzy);
+  fuzzy.forEach(m => matchedSegmentIds.add(`${m.segmentId}`));
 
-  if (options.useFuzzy) {
-    console.log('\n[2/3] Finding fuzzy matches...');
-    const fuzzy = findFuzzyMentions(
-      terms,
-      segments,
-      matchedSegmentIds, 
-      {
-        threshold: options.fuzzyThreshold,
-        distance: 100,
-        minMatchCharLength: 3,
-        includeScore: true,
-      });
-
-      console.log(`   Found ${fuzzy.length} fuzzy mentions.`);
-
-      allMentions.push(...fuzzy);
-      fuzzy.forEach(m => matchedSegmentIds.add(`${m.segmentId}`));
-  }
-
-  if ((options as any).useImplicit || (options as any).useSemantic) {
-    // Accept either key during a short migration window: useImplicit preferred.
-    console.log('\n[3/3] Finding implicit mentions...');
-    const implicit = await findImplicitMentions(
-      terms,
-      segments,
-      matchedSegmentIds,
-      (options as any).implicitThreshold || (options as any).semanticThreshold || 0.75,
-    );
-
-    console.log(`   Found ${implicit.length} implicit mentions.`);
-
-    allMentions.push(...implicit);
-  }
+  console.log('\n[3/3] Finding implicit mentions...');
+  /*
+  const implicit = await findImplicitMentions(
+    normalizedTerms,
+    segments,
+    matchedSegmentIds,
+    DEFAULT_IMPLICIT_THRESHOLD,
+  );
+  console.log(`   Found ${implicit.length} implicit mentions.`);
+  allMentions.push(...implicit);
+  */
 
   const deduped = deduplicateMentions(allMentions);
 
@@ -357,4 +407,4 @@ export async function findMentions(
   return deduped;
 }
 
-export default { cosineSimilarity, findMentions };
+export default { findMentions };

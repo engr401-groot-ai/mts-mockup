@@ -136,11 +136,3 @@ export interface SearchResults {
     current: number;
     matches: SearchMatch[];
 }
-
-// Keyterm definition
-export type Keyterm = {
-  category?: string;
-  term: string;
-  aliases?: string[];
-  notes?: string;
-};
