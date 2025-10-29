@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { suggestKeyterm } from '../../data/client';
 import type { ModalProps } from '../../types/ui';
 

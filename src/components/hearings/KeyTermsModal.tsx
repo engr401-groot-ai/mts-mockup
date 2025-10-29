@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import SuggestTermModal from './SuggestTermModal';
-import { fetchKeyterms, type Keyterm } from '../../data/client';
+import { fetchKeyterms } from '../../data/client';
+import { Keyterm } from '../../types/hearings';
 import type { ModalProps } from '../../types/ui';
 
 interface KeytermsModalProps extends ModalProps {

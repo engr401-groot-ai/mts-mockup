@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 
 const app = express();
-const PORT = Number(process.env.PORT || 3001);
+const PORT = Number(process.env.EXPRESS_PORT || 5001);
 
 app.use(cors());
 app.use(express.json());

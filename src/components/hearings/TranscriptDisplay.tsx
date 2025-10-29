@@ -3,7 +3,7 @@ import TranscriptDropdown from './TranscriptDropdown';
 import KeytermsModal from './KeyTermsModal';
 import SuggestTermModal from './SuggestTermModal';
 import { formatTimestamp } from '../../lib/formatUtils';
-import { fetchMentions } from '../../data/client';
+import { fetchMentions, fetchKeyterms, extractMentions } from '../../data/client';
 import type { TranscriptSegment, SearchMatch } from '../../types/hearings';
 
 interface TranscriptProps {
@@ -48,6 +48,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
     const [showSuggestModal, setShowSuggestModal] = useState(false);
     const [mentions, setMentions] = useState<Array<any>>([]);
     const [mentionsLoading, setMentionsLoading] = useState(false);
+    const [extractLoading, setExtractLoading] = useState(false);
 
     useEffect(() => {
         let mounted = true;
@@ -243,6 +244,29 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                                     <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-100 text-red-800">
                                         Implicit
                                     </span>
+                                </div>
+                                <div>
+                                    <button
+                                        onClick={async () => {
+                                            if (!year || !committee || !billName || !videoTitle) return;
+                                            try {
+                                                setExtractLoading(true);
+                                                const keyterms = await fetchKeyterms();
+                                                const resp = await extractMentions(year, committee, billName, videoTitle, keyterms, segments);
+                                                if (resp && Array.isArray(resp.mentions)) {
+                                                    setMentions(resp.mentions);
+                                                }
+                                            } catch (err) {
+                                                console.error('Failed to extract mentions:', err);
+                                            } finally {
+                                                setExtractLoading(false);
+                                            }
+                                        }}
+                                        className="ml-4 inline-flex items-center gap-2 px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+                                        disabled={extractLoading}
+                                    >
+                                        {extractLoading ? 'Extracting...' : 'Extract'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
