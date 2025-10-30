@@ -24,19 +24,18 @@ router.get('/', async (req: Request, res: Response) => {
 
     const rows = result.data.values || [];
 
-    const formatted = rows.map(([category, term, aliases]) => ({
-      category: category || '',
-      term: term || '',
-      aliases: aliases
-        ? aliases
-          .replace(/[,;:"']/g, '')
-          .split(/\s+/)
-          .map((a: string) => a.trim())
-          .filter((a: string) => a.length > 0)
-        : []
-      }));
+    const formatted = rows
+      .map(([category, term, aliases]) => ({
+        term: String(term || '').trim(),
+        category: String(category || '').trim(),
+        aliases: aliases
+          ? String(aliases).split(/[;,]/).map((a: string) => a.trim()).filter(Boolean)
+          : []
+      }))
+      .filter(t => t.term);
 
-  res.json(formatted);
+    console.log(`Loaded ${formatted.length} terms from sheet`);
+    res.json(formatted);
   } catch (error) {
     console.error('Error fetching sheet data:', error);
     res.status(500).json({ error: 'Failed to fetch sheet data' });

@@ -5,7 +5,6 @@ export type Term = {
   text: string;
   aliases?: string[];
   category?: string;
-  isExplicit?: boolean;
 }
 
 export type Segment = {
@@ -26,150 +25,91 @@ export type Mention = {
   matchType: 'explicit' | 'implicit';
 }
 
-/**
- * Creates a unique ID for a mention
- */
 function makeId(term: string, segmentId: number, timestamp: number): string {
   return `${term.replace(/\s+/g, '_').slice(0, 40)}-${segmentId}-${Math.floor(timestamp)}`;
 }
 
-/**
- * Normalize text: remove diacritics, lowercase, trim
- */
 function norm(s = ''): string {
-  return s
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
+  return s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
-/**
- * Escape special regex characters
- */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/**
- * Check if a term is too generic to match alone
- */
-function isGenericTerm(termNorm: string): boolean {
-  const generic = [
-    'university', 'college', 'research', 'board',
-    'center', 'education', 'athletic', 'scholarship', 'tuition'
-  ];
+function isAcronym(text: string): boolean {
+  return /^[A-Z]{2,}$/.test(text.trim());
+}
 
-  const tokens = termNorm.split(/\s+/).filter(Boolean);
-
-  // Single generic words are too generic
-  if (tokens.length === 1 && generic.includes(tokens[0])) {
+function hasContextualSupport(
+  term: Term,
+  segment: Segment,
+  matchIndex: number
+): boolean {
+  // Only validate generic education terms
+  if (term.category !== 'education' || !/(university|college)$/i.test(term.text)) {
     return true;
   }
 
-  return false;
+  // Get surrounding context (50 chars on each side)
+  const start = Math.max(0, matchIndex - 50);
+  const end = Math.min(segment.text.length, matchIndex + (term.text || '').length + 50);
+  const context = segment.text.slice(start, end);
+
+  // Look for Hawaii-specific markers
+  return /hawaii|manoa|UH|oahu/i.test(context);
 }
 
 /**
- * STRATEGY 1: Pure Regex Matching
- * 
- * Your keyterms from CSV:
- * - legislation: "304a", "302a-431", "487n"
- * - organization: "Board of Regents" (BOR), "RCUH", "JABSOM", etc.
- * - education: "university" (UH), "community college" (cc)
- * - location: "Mauna Kea", "Aloha Stadium"
- * - issue: "Red Hill", "Underground Storage Tanks"
- * - category: "Athletic"
- * 
- * Approach:
- * 1. Normalize both term and segment text
- * 2. Try exact phrase match with word boundaries
- * 3. Try flexible whitespace if multi-word term
- * 4. Extract matched text preserving original case
+ * Phase 1: Exact and fuzzy text matching
  */
 function findExplicitMatches(terms: Term[], segments: Segment[]): Mention[] {
   const mentions: Mention[] = [];
 
-  if (!terms?.length || !segments?.length) return mentions;
-
-  // Process each term and its aliases
   for (const term of terms) {
-    const variants = [term.text, ...(term.aliases || [])];
+    const variants = [term.text, ...(term.aliases || [])].filter(Boolean);
 
-    for (const variantRaw of variants) {
-      const variant = String(variantRaw || '').trim();
-      if (!variant) continue;
+    for (const variant of variants) {
+      const variantTrimmed = String(variant).trim();
+      if (!variantTrimmed) continue;
 
-      const variantNorm = norm(variant);
+      const isAcro = isAcronym(variantTrimmed);
 
-      // Skip generic single-word terms
-      if (isGenericTerm(variantNorm)) continue;
-
-      const variantTokens = variantNorm.split(/\s+/).filter(Boolean);
-      if (!variantTokens.length) continue;
-
-      // Check each segment for this variant
       for (const seg of segments) {
-        const segNorm = norm(seg.text);
+        const searchText = seg.text || '';
 
-        // PHASE 1: Exact phrase match with word boundaries
-        // Using Unicode word boundaries (handles numbers and letters)
-        const exactPattern = new RegExp(
-          `(?<!\\p{L}|\\p{N})${escapeRegex(variantNorm)}(?!\\p{L}|\\p{N})`,
-          'u'
+        // Build pattern based on whether it's an acronym. Use case-insensitive for non-acronyms.
+        const boundary = '(?<![A-Za-z0-9])';
+        const pattern = new RegExp(
+          `${boundary}${escapeRegex(variantTrimmed)}(?![A-Za-z0-9])`,
+          isAcro ? 'g' : 'gi'
         );
 
-        const exactMatch = exactPattern.exec(segNorm);
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(searchText)) !== null) {
+          const matchIndex = match.index;
+          
+          // Validate context for generic terms
+          if (!hasContextualSupport(term, seg, matchIndex)) {
+            continue;
+          }
 
-        if (exactMatch) {
-          // Extract matched text from original segment (preserving case/diacritics)
-          const matchStart = exactMatch.index;
-          const matchEnd = matchStart + exactMatch[0].length;
-          const matchedText = seg.text.slice(matchStart, matchEnd);
+          // Extract original text preserving case
+          const matchedText = seg.text.slice(
+            matchIndex,
+            matchIndex + match[0].length
+          );
 
           mentions.push({
             id: makeId(term.text, seg.id, seg.start),
             termId: term.id || term.text,
             term: term.text,
-            matchedText: matchedText,
+            matchedText,
             segmentId: seg.id,
             timestamp: seg.start,
-            score: 1.0, // Perfect match
+            score: 1.0,
             matchType: 'explicit'
           });
-          continue; // Found match, move to next segment
-        }
-
-        // PHASE 2: Flexible whitespace for multi-word terms
-        // Handles: "board  of  regents", "board\nof regents", etc.
-        if (variantTokens.length > 1) {
-          const flexPattern = variantTokens
-            .map(t => escapeRegex(t))
-            .join('\\s+');
-
-          const flexRegex = new RegExp(
-            `(?<!\\p{L}|\\p{N})${flexPattern}(?!\\p{L}|\\p{N})`,
-            'u'
-          );
-
-          const flexMatch = flexRegex.exec(segNorm);
-
-          if (flexMatch) {
-            const matchStart = flexMatch.index;
-            const matchEnd = matchStart + flexMatch[0].length;
-            const matchedText = seg.text.slice(matchStart, matchEnd);
-
-            mentions.push({
-              id: makeId(term.text, seg.id, seg.start),
-              termId: term.id || term.text,
-              term: term.text,
-              matchedText: matchedText,
-              segmentId: seg.id,
-              timestamp: seg.start,
-              score: 0.95, // Slight penalty for whitespace variation
-              matchType: 'explicit'
-            });
-          }
         }
       }
     }
@@ -179,28 +119,19 @@ function findExplicitMatches(terms: Term[], segments: Segment[]): Mention[] {
 }
 
 /**
- * Simple in-memory cache for embeddings
+ * Simple embedding cache
  */
-const embeddingsCache = new Map<string, number[]>();
+const embeddingCache = new Map<string, number[]>();
 
-async function batchGetEmbeddings(texts: string[]): Promise<number[][]> {
-  const normalized = texts.map(t => norm(t));
-  const unique = Array.from(new Set(normalized));
-
-  const missing = unique.filter(u => !embeddingsCache.has(u));
-  if (missing.length > 0) {
-    const fetched = await getEmbeddings(missing);
-    for (let i = 0; i < missing.length; i++) {
-      embeddingsCache.set(missing[i], fetched[i]);
-    }
+async function getEmbedding(text: string): Promise<number[]> {
+  const key = norm(text);
+  if (!embeddingCache.has(key)) {
+    const [embedding] = await getEmbeddings([text]);
+    embeddingCache.set(key, embedding);
   }
-
-  return normalized.map(n => embeddingsCache.get(n) as number[]);
+  return embeddingCache.get(key)!;
 }
 
-/**
- * Cosine similarity between two vectors
- */
 function cosineSimilarity(vecA: number[], vecB: number[]): number {
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < vecA.length; i++) {
@@ -213,73 +144,48 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
 }
 
 /**
- * STRATEGY 2: Implicit matches using embeddings
- * 
- * For contextual references that can't be caught by exact matching:
- * - issue: "Red Hill", "Underground Storage Tanks"
- * - location: "Mauna Kea", "Aloha Stadium"
+ * Phase 2: Semantic matching for specific categories
  */
-async function findImplicitMatches(
+async function findSemanticMatches(
   terms: Term[],
   segments: Segment[],
-  alreadyMatched: Set<string>,
-  threshold = 0.75,
-  topKPerTerm = 3
+  excludeSegmentIds: Set<number>,
+  threshold = 0.82
 ): Promise<Mention[]> {
-  // Only use embeddings for specific categories
-  const implicitTerms = terms.filter(t => 
-    t.category === 'issue' || 
-    t.category === 'location' ||
-    t.category === 'metonymy'
+  
+  // Only match against substantial segments
+  const candidates = segments.filter(s =>
+    !excludeSegmentIds.has(s.id) &&
+    s.text.split(/\s+/).length >= 10
   );
 
-  const unmatchedSegments = segments.filter(s => 
-    !alreadyMatched.has(`${s.id}`)
-  );
-
-  if (implicitTerms.length === 0 || unmatchedSegments.length === 0) {
+  if (terms.length === 0 || candidates.length === 0) {
     return [];
   }
 
-  console.log(`   Semantic matching ${implicitTerms.length} terms against ${unmatchedSegments.length} segments...`);
-
-  const termTexts = implicitTerms.map(t => t.text);
-  const segmentTexts = unmatchedSegments.map(s => s.text);
-
-  const [termEmbeddings, segmentEmbeddings] = await Promise.all([
-    batchGetEmbeddings(termTexts),
-    batchGetEmbeddings(segmentTexts)
-  ]);
+  console.log(`   Semantic: ${terms.length} terms vs ${candidates.length} segments...`);
 
   const mentions: Mention[] = [];
 
-  for (let ti = 0; ti < implicitTerms.length; ti++) {
-    const tEmb = termEmbeddings[ti];
-    const scores: { segIdx: number; score: number }[] = [];
+  for (const term of terms) {
+    const termEmb = await getEmbedding(term.text);
 
-    for (let si = 0; si < segmentEmbeddings.length; si++) {
-      const sEmb = segmentEmbeddings[si];
-      const score = cosineSimilarity(tEmb, sEmb);
-      if (score >= threshold) {
-        scores.push({ segIdx: si, score });
+    for (const seg of candidates) {
+      const segEmb = await getEmbedding(seg.text);
+      const sim = cosineSimilarity(termEmb, segEmb);
+
+      if (sim >= threshold) {
+        mentions.push({
+          id: makeId(term.text, seg.id, seg.start),
+          termId: term.id || term.text,
+          term: term.text,
+          matchedText: seg.text.slice(0, 80) + '...',
+          segmentId: seg.id,
+          timestamp: seg.start,
+          score: Number(sim.toFixed(4)),
+          matchType: 'implicit'
+        });
       }
-    }
-
-    scores.sort((a, b) => b.score - a.score);
-    const top = scores.slice(0, topKPerTerm);
-
-    for (const s of top) {
-      const seg = unmatchedSegments[s.segIdx];
-      mentions.push({
-        id: makeId(implicitTerms[ti].text, seg.id, seg.start),
-        termId: implicitTerms[ti].id || implicitTerms[ti].text,
-        term: implicitTerms[ti].text,
-        matchedText: seg.text.slice(0, 60) + '...',
-        segmentId: seg.id,
-        timestamp: seg.start,
-        score: Number(s.score.toFixed(4)),
-        matchType: 'implicit'
-      });
     }
   }
 
@@ -287,7 +193,7 @@ async function findImplicitMatches(
 }
 
 /**
- * Deduplicate mentions: prefer explicit > implicit
+ * Deduplicate: prefer explicit > implicit, higher score
  */
 function deduplicateMentions(mentions: Mention[]): Mention[] {
   const map = new Map<string, Mention>();
@@ -302,11 +208,10 @@ function deduplicateMentions(mentions: Mention[]): Mention[] {
     }
 
     const priority = { explicit: 2, implicit: 1 };
-    const mPriority = priority[m.matchType];
-    const ePriority = priority[existing.matchType];
+    const mPri = priority[m.matchType];
+    const ePri = priority[existing.matchType];
 
-    if (mPriority > ePriority || 
-        (mPriority === ePriority && m.score > existing.score)) {
+    if (mPri > ePri || (mPri === ePri && m.score > existing.score)) {
       map.set(key, m);
     }
   }
@@ -319,7 +224,7 @@ function deduplicateMentions(mentions: Mention[]): Mention[] {
 }
 
 /**
- * Main function
+ * Main API
  */
 export async function findMentions(
   terms: Term[],
@@ -327,55 +232,71 @@ export async function findMentions(
   options = {
     useExplicit: true,
     useImplicit: false,
-    implicitThreshold: 0.75
+    implicitCategories: ['issue', 'location'] as string[],
+    implicitThreshold: 0.82
   }
 ): Promise<Mention[]> {
+  
+  // Normalize terms - handle both 'term' and 'text' field names
+  // Debug: show incoming term shape for easier troubleshooting
+  try { console.log('Incoming terms sample:', JSON.stringify((terms || [])[0] || {})); } catch (e) { /* ignore */ }
+
+  const normalized = (terms || []).map((t: any) => {
+    const termText = String(t?.text || t?.term || '').trim();
+    const rawAliases = t?.aliases;
+    const aliases = Array.isArray(rawAliases)
+      ? rawAliases.map((a: any) => String(a).trim()).filter(Boolean)
+      : (typeof rawAliases === 'string'
+        ? String(rawAliases).split(/[;,]/).map((a: string) => a.trim()).filter(Boolean)
+        : []);
+
+    return {
+      id: t?.id || termText,
+      text: termText,
+      aliases,
+      category: t?.category || t?.Category || ''
+    } as Term;
+  }).filter(t => t.text);
+
+  console.log(`\n🔍 Processing ${normalized.length} terms, ${segments.length} segments`);
+
   const allMentions: Mention[] = [];
-  const matchedSegments = new Set<string>();
+  const matchedSegIds = new Set<number>();
 
-  // Normalize terms from Google Sheets API
-  const normalizedTerms: Term[] = (terms || []).map((t: any) => ({
-    id: t.id || t.text || undefined,
-    text: String(t.text || t.term || '').trim(),
-    aliases: Array.isArray(t.aliases)
-      ? t.aliases
-      : typeof t.aliases === 'string'
-        ? t.aliases.split(/[;,]/).map((a: string) => a.trim()).filter(Boolean)
-        : [],
-    category: t.category || undefined,
-    isExplicit: typeof t.isExplicit === 'boolean' ? t.isExplicit : undefined,
-  })).filter(t => t.text); // Remove empty terms
-
-  console.log(`\nProcessing ${normalizedTerms.length} terms against ${segments.length} segments...`);
-
-  // Phase 1: Explicit regex matching
+  // Phase 1: Text matching
   if (options.useExplicit) {
-    console.log('\n[1/2] Finding explicit matches...');
-    const explicitStart = Date.now();
-    const explicit = findExplicitMatches(normalizedTerms, segments);
-    console.log(`   Found ${explicit.length} explicit mentions in ${Date.now() - explicitStart}ms`);
-
+    console.log('\n[1/2] Text matching...');
+    const t0 = Date.now();
+    const explicit = findExplicitMatches(normalized, segments);
+    console.log(`   Found ${explicit.length} explicit mentions (${Date.now() - t0}ms)`);
+    
     allMentions.push(...explicit);
-    explicit.forEach(m => matchedSegments.add(`${m.segmentId}`));
+    explicit.forEach(m => matchedSegIds.add(m.segmentId));
   }
 
-  // Phase 2: Implicit semantic matching
+  // Phase 2: Semantic matching
   if (options.useImplicit) {
-    console.log('\n[2/2] Finding implicit matches...');
-    const implicitStart = Date.now();
-    const implicit = await findImplicitMatches(
-      normalizedTerms,
-      segments,
-      matchedSegments,
-      options.implicitThreshold
+    const semanticTerms = normalized.filter(t =>
+      options.implicitCategories.includes(t.category || '')
     );
-    console.log(`   Found ${implicit.length} implicit mentions in ${Date.now() - implicitStart}ms`);
 
-    allMentions.push(...implicit);
+    if (semanticTerms.length > 0) {
+      console.log('\n[2/2] Semantic matching...');
+      const t0 = Date.now();
+      const implicit = await findSemanticMatches(
+        semanticTerms,
+        segments,
+        matchedSegIds,
+        options.implicitThreshold
+      );
+      console.log(`   Found ${implicit.length} implicit mentions (${Date.now() - t0}ms)`);
+      
+      allMentions.push(...implicit);
+    }
   }
 
   const deduped = deduplicateMentions(allMentions);
-  console.log(`\n✓ Total unique mentions: ${deduped.length}`);
+  console.log(`\n✓ Total: ${deduped.length} unique mentions\n`);
 
   return deduped;
 }
