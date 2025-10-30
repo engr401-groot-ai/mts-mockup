@@ -1,4 +1,7 @@
 import { getEmbeddings } from "./openai";
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 export type Term = {
   id?: string;
@@ -25,97 +28,56 @@ export type Mention = {
   matchType: 'explicit' | 'implicit';
 }
 
+/**
+ * Write detailed matches to a text file for debugging.
+ */
+async function writeMatchesDebugFile(
+  matches: Array<{term: string, seg: number, score: number}>,
+  segments: Segment[],
+  maxSimilarity: number,
+) {
+  // sort descending
+  const all = matches.slice().sort((a, b) => b.score - a.score);
+
+  const lines: string[] = [];
+  lines.push(`Max similarity: ${maxSimilarity.toFixed(6)}`);
+  lines.push(`Total matches: ${all.length}`);
+  lines.push('');
+
+  for (const m of all) {
+    const segObj = segments.find(s => s.id === m.seg as number);
+    const snippet = segObj ? String(segObj.text).replace(/\s+/g, ' ').slice(0, 200) : '';
+    lines.push(`score: ${m.score.toFixed(6)} | segment id: ${m.seg} | term: "${m.term}" | text: "${snippet}"`);
+  }
+
+  const baseDir = typeof __dirname !== 'undefined'
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
+
+  const fileName = `matches-debug.txt`;
+  const outPath = path.join(baseDir, fileName);
+
+  try {
+    await fs.promises.writeFile(outPath, lines.join('\n'), 'utf8');
+    // helpful debug log so callers can see exactly where the file landed
+    console.log(`Wrote matches file to ${outPath}`);
+  } catch (err) {
+    console.error('Failed to write matches file', err);
+  }
+}
+
+/**
+ * Create mention ID
+ */
 function makeId(term: string, segmentId: number, timestamp: number): string {
   return `${term.replace(/\s+/g, '_').slice(0, 40)}-${segmentId}-${Math.floor(timestamp)}`;
 }
 
+/**
+ * Normalize a string for embedding comparison
+ */
 function norm(s = ''): string {
   return s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-}
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function isAcronym(text: string): boolean {
-  return /^[A-Z]{2,}$/.test(text.trim());
-}
-
-function hasContextualSupport(
-  term: Term,
-  segment: Segment,
-  matchIndex: number
-): boolean {
-  // Only validate generic education terms
-  if (term.category !== 'education' || !/(university|college)$/i.test(term.text)) {
-    return true;
-  }
-
-  // Get surrounding context (50 chars on each side)
-  const start = Math.max(0, matchIndex - 50);
-  const end = Math.min(segment.text.length, matchIndex + (term.text || '').length + 50);
-  const context = segment.text.slice(start, end);
-
-  // Look for Hawaii-specific markers
-  return /hawaii|manoa|UH|oahu/i.test(context);
-}
-
-/**
- * Phase 1: Exact and fuzzy text matching
- */
-function findExplicitMatches(terms: Term[], segments: Segment[]): Mention[] {
-  const mentions: Mention[] = [];
-
-  for (const term of terms) {
-    const variants = [term.text, ...(term.aliases || [])].filter(Boolean);
-
-    for (const variant of variants) {
-      const variantTrimmed = String(variant).trim();
-      if (!variantTrimmed) continue;
-
-      const isAcro = isAcronym(variantTrimmed);
-
-      for (const seg of segments) {
-        const searchText = seg.text || '';
-
-        // Build pattern based on whether it's an acronym. Use case-insensitive for non-acronyms.
-        const boundary = '(?<![A-Za-z0-9])';
-        const pattern = new RegExp(
-          `${boundary}${escapeRegex(variantTrimmed)}(?![A-Za-z0-9])`,
-          isAcro ? 'g' : 'gi'
-        );
-
-        let match: RegExpExecArray | null;
-        while ((match = pattern.exec(searchText)) !== null) {
-          const matchIndex = match.index;
-          
-          // Validate context for generic terms
-          if (!hasContextualSupport(term, seg, matchIndex)) {
-            continue;
-          }
-
-          // Extract original text preserving case
-          const matchedText = seg.text.slice(
-            matchIndex,
-            matchIndex + match[0].length
-          );
-
-          mentions.push({
-            id: makeId(term.text, seg.id, seg.start),
-            termId: term.id || term.text,
-            term: term.text,
-            matchedText,
-            segmentId: seg.id,
-            timestamp: seg.start,
-            score: 1.0,
-            matchType: 'explicit'
-          });
-        }
-      }
-    }
-  }
-
-  return mentions;
 }
 
 /**
@@ -123,16 +85,58 @@ function findExplicitMatches(terms: Term[], segments: Segment[]): Mention[] {
  */
 const embeddingCache = new Map<string, number[]>();
 
-async function getEmbedding(text: string): Promise<number[]> {
-  const key = norm(text);
-  if (!embeddingCache.has(key)) {
-    const [embedding] = await getEmbeddings([text]);
-    embeddingCache.set(key, embedding);
+/**
+ * Batch get embeddings with caching
+ */
+async function batchGetEmbeddings(texts: string[]): Promise<number[][]> {
+  if (!texts || texts.length === 0) return [];
+
+  // Normalize inputs and compute unique normalized keys
+  const normalized = texts.map((t) => norm(t));
+  const uniqueNormalized = Array.from(new Set(normalized));
+
+  // Determine which normalized keys are missing from cache and pick a representative original text to fetch
+  const toFetch: string[] = [];
+  const fetchKeys: string[] = [];
+
+  for (const key of uniqueNormalized) {
+    if (!embeddingCache.has(key)) {
+      const idx = normalized.indexOf(key);
+      const sampleText = texts[idx] || key;
+      toFetch.push(sampleText);
+      fetchKeys.push(key);
+    }
   }
-  return embeddingCache.get(key)!;
+
+  if (toFetch.length > 0) {
+    console.log(`   Fetching ${toFetch.length} new embeddings`);
+    try {
+      const newEmbeddings = await getEmbeddings(toFetch);
+      if (!newEmbeddings || !Array.isArray(newEmbeddings)) {
+        console.error('batchGetEmbeddings: invalid response from getEmbeddings');
+      } else {
+        for (let i = 0; i < fetchKeys.length; i++) {
+          const k = fetchKeys[i];
+          const emb = newEmbeddings[i];
+          if (Array.isArray(emb) && emb.length > 0) embeddingCache.set(k, emb);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching embeddings batch:', err);
+    }
+  }
+
+  // Return embeddings in same order as input, fallback to empty array if not available
+  return texts.map((t) => embeddingCache.get(norm(t)) || []);
 }
 
+/**
+ * Compute cosine similarity between two vectors.
+ */
 function cosineSimilarity(vecA: number[], vecB: number[]): number {
+  if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) return 0;
+  if (vecA.length !== vecB.length) return 0;
+
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < vecA.length; i++) {
     dot += vecA[i] * vecB[i];
@@ -144,59 +148,90 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
 }
 
 /**
- * Phase 2: Semantic matching for specific categories
+ * Semantic Search using OpenAI embeddings
  */
 async function findSemanticMatches(
   terms: Term[],
   segments: Segment[],
-  excludeSegmentIds: Set<number>,
-  threshold = 0.82
+  threshold = 0.375,
+  explicitThreshold = 0.45,
 ): Promise<Mention[]> {
-  
-  // Only match against substantial segments
-  const candidates = segments.filter(s =>
-    !excludeSegmentIds.has(s.id) &&
-    s.text.split(/\s+/).length >= 10
-  );
+  if (terms.length === 0 || segments.length === 0) return [];
 
-  if (terms.length === 0 || candidates.length === 0) {
-    return [];
-  }
+  console.log(`   Searching: ${terms.length} terms vs ${segments.length} segments...`);
 
-  console.log(`   Semantic: ${terms.length} terms vs ${candidates.length} segments...`);
+  // Use plain term text for embeddings
+  const termQueries: string[] = terms.map(t => String(t.text || '').trim());
 
+  // Batch embed all terms and segments
+  const [termEmbeddings, segmentEmbeddings] = await Promise.all([
+    batchGetEmbeddings(termQueries),
+    batchGetEmbeddings(segments.map(s => s.text))
+  ]);
+
+  console.log('   All embeddings fetched!');
+
+  // Match all terms vs segments
   const mentions: Mention[] = [];
+  let maxSimilarity = 0;
+  let allMatches: Array<{term: string, seg: number, score: number}> = [];
 
-  for (const term of terms) {
-    const termEmb = await getEmbedding(term.text);
+  for (let i = 0; i < terms.length; i++) {
+    const term = terms[i];
+    const termEmb = termEmbeddings[i];
+    
+    if (!termEmb || termEmb.length === 0) {
+      console.log(`   No embedding for term: ${term.text}`);
+      continue;
+    }
 
-    for (const seg of candidates) {
-      const segEmb = await getEmbedding(seg.text);
+    for (let j = 0; j < segments.length; j++) {
+      const seg = segments[j];
+      const segEmb = segmentEmbeddings[j];
+      
+      if (!segEmb || segEmb.length === 0) continue;
+
       const sim = cosineSimilarity(termEmb, segEmb);
+      
+      // Track max similarity
+      maxSimilarity = Math.max(maxSimilarity, sim);
+
+      // Collect every match for later inspection
+      allMatches.push({term: term.text, seg: seg.id, score: sim});
 
       if (sim >= threshold) {
+        // Label higher-confidence semantic hits as 'explicit' for priority,
+        // but note these are still semantic-only matches (no text exact-match used).
+        const matchType = sim >= explicitThreshold ? 'explicit' : 'implicit';
         mentions.push({
           id: makeId(term.text, seg.id, seg.start),
           termId: term.id || term.text,
           term: term.text,
-          matchedText: seg.text.slice(0, 80) + '...',
+          matchedText: seg.text.slice(0, 150) + "...",
           segmentId: seg.id,
           timestamp: seg.start,
           score: Number(sim.toFixed(4)),
-          matchType: 'implicit'
+          matchType,
         });
       }
     }
   }
 
+  await writeMatchesDebugFile(allMatches, segments, maxSimilarity).catch(err => 
+    console.error('   DEBUG: failed to write matches file', err)
+  );
+  
+  console.log(`   Total Semantic matches found: ${mentions.length}`);
+  
   return mentions;
 }
 
 /**
- * Deduplicate: prefer explicit > implicit, higher score
+ * Deduplicate: prefer explicit > implicit (higher score wins)
  */
 function deduplicateMentions(mentions: Mention[]): Mention[] {
   const map = new Map<string, Mention>();
+  const priority = { explicit: 2, implicit: 1 };
 
   for (const m of mentions) {
     const key = `${m.term}|${m.segmentId}`;
@@ -216,7 +251,6 @@ function deduplicateMentions(mentions: Mention[]): Mention[] {
     }
   }
 
-  const priority = { explicit: 2, implicit: 1 };
   return Array.from(map.values()).sort((a, b) => {
     const diff = priority[b.matchType] - priority[a.matchType];
     return diff !== 0 ? diff : b.score - a.score;
@@ -224,79 +258,55 @@ function deduplicateMentions(mentions: Mention[]): Mention[] {
 }
 
 /**
- * Main API
+ * Main Function to find mentions in segments
  */
 export async function findMentions(
   terms: Term[],
   segments: Segment[],
   options = {
-    useExplicit: true,
-    useImplicit: false,
-    implicitCategories: ['issue', 'location'] as string[],
-    implicitThreshold: 0.82
+    implicitThreshold: 0.375,
+    explicitThreshold: 0.45,
   }
 ): Promise<Mention[]> {
-  
-  // Normalize terms - handle both 'term' and 'text' field names
-  // Debug: show incoming term shape for easier troubleshooting
-  try { console.log('Incoming terms sample:', JSON.stringify((terms || [])[0] || {})); } catch (e) { /* ignore */ }
 
+  // Normalize terms 
   const normalized = (terms || []).map((t: any) => {
-    const termText = String(t?.text || t?.term || '').trim();
-    const rawAliases = t?.aliases;
-    const aliases = Array.isArray(rawAliases)
-      ? rawAliases.map((a: any) => String(a).trim()).filter(Boolean)
-      : (typeof rawAliases === 'string'
-        ? String(rawAliases).split(/[;,]/).map((a: string) => a.trim()).filter(Boolean)
-        : []);
+      const termText = String(t?.text || t?.term || "").trim();
 
-    return {
-      id: t?.id || termText,
-      text: termText,
-      aliases,
-      category: t?.category || t?.Category || ''
-    } as Term;
-  }).filter(t => t.text);
+      const rawAliases = t?.aliases;
 
-  console.log(`\n🔍 Processing ${normalized.length} terms, ${segments.length} segments`);
+      const aliases = Array.isArray(rawAliases)
+        ? rawAliases.map((a: any) => String(a).trim()).filter(Boolean)
+        : typeof rawAliases === "string"
+        ? String(rawAliases)
+            .split(/[;,]/)
+            .map((a: string) => a.trim())
+            .filter(Boolean)
+        : [];
 
-  const allMentions: Mention[] = [];
-  const matchedSegIds = new Set<number>();
+      return {
+        id: t?.id || termText,
+        text: termText,
+        aliases,
+        category: t?.category || t?.Category || "",
+      } as Term;
+    })
+    .filter((t) => t.text);
 
-  // Phase 1: Text matching
-  if (options.useExplicit) {
-    console.log('\n[1/2] Text matching...');
-    const t0 = Date.now();
-    const explicit = findExplicitMatches(normalized, segments);
-    console.log(`   Found ${explicit.length} explicit mentions (${Date.now() - t0}ms)`);
-    
-    allMentions.push(...explicit);
-    explicit.forEach(m => matchedSegIds.add(m.segmentId));
-  }
+  console.log(`\n${normalized.length} terms, ${segments.length} segments`);
 
-  // Phase 2: Semantic matching
-  if (options.useImplicit) {
-    const semanticTerms = normalized.filter(t =>
-      options.implicitCategories.includes(t.category || '')
-    );
+  console.log('   Finding semantic matches...');
+  const semanticMentions = await findSemanticMatches(
+    normalized,
+    segments,
+    options.implicitThreshold,
+    options.explicitThreshold,
+  );
 
-    if (semanticTerms.length > 0) {
-      console.log('\n[2/2] Semantic matching...');
-      const t0 = Date.now();
-      const implicit = await findSemanticMatches(
-        semanticTerms,
-        segments,
-        matchedSegIds,
-        options.implicitThreshold
-      );
-      console.log(`   Found ${implicit.length} implicit mentions (${Date.now() - t0}ms)`);
-      
-      allMentions.push(...implicit);
-    }
-  }
-
+  const allMentions = [...semanticMentions];
   const deduped = deduplicateMentions(allMentions);
-  console.log(`\n✓ Total: ${deduped.length} unique mentions\n`);
+
+  console.log(`Total unique mentions: ${deduped.length}\n`);
 
   return deduped;
 }

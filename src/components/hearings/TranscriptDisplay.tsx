@@ -107,6 +107,11 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
         }
     }, [searchMatches, onSearchResultsChange]);
 
+    const sortedMentions = useMemo(() => {
+        if (!mentions || mentions.length === 0) return [];
+        return [...mentions].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    }, [mentions]);
+
     // Highlight search term in text with proper styling for current match
     const highlightText = (text: string, segmentId: number): React.ReactNode => {
         if (!searchTerm) return text;
@@ -239,7 +244,7 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                                     <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-800">
                                         Explicit
                                     </span>
-                                    <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-100 text-red-800">
+                                    <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-100 text-yellow-800">
                                         Implicit
                                     </span>
                                 </div>
@@ -294,31 +299,30 @@ const TranscriptDisplay: React.FC<TranscriptProps> = ({
                         <>
                             {mentions && mentions.length > 0 ? (
                                 <div className="space-y-2">
-                                    {mentions.map((m, idx) => {
-                                        const key = `${m.term}-${m.segmentId}-${idx}`;
-                                        const segment = segments.find(s => s.id === m.segmentId as number);
+                                    {sortedMentions.map((m: any, idx: number) => {
+                                        const key = `mention-${m.id || idx}`;
+                                        const segment = segments.find(s => s.id === (m.segmentId as number));
+                                        const timestamp = m.timestamp || (segment ? segment.start : 0);
 
                                         const isExplicit = m.matchType === 'explicit';
-                                        const isImplicit = m.matchType === 'implicit';
-
-                                        const termHighlightClass = isExplicit ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                                        const termClass = isExplicit ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800';
 
                                         return (
                                             <div key={key} className={`flex gap-3 p-2 rounded-lg transition-colors hover:bg-gray-50`}>
                                                 <button
-                                                    onClick={() => onTimestampClick(m.timestamp)}
+                                                    onClick={() => onTimestampClick(timestamp)}
                                                     className="text-blue-600 hover:text-blue-800 hover:underline font-mono text-sm whitespace-nowrap font-medium min-w-[3rem] text-left"
                                                 >
-                                                    {formatTimestamp(m.timestamp)}
+                                                    {formatTimestamp(timestamp)}
                                                 </button>
                                                 <div className="flex-1">
                                                     <div className="flex items-center justify-between">
                                                         <div>
-                                                            <div className="text-sm font-bold">
-                                                                <span className={`px-1 rounded ${termHighlightClass}`}>{m.term}</span>
+                                                            <div className="text-sm font-bold flex items-center gap-2 flex-wrap">
+                                                                <span className={`px-1 rounded ${termClass} text-sm`}>{m.term} <span className="text-xs text-gray-500">({(m.score||0).toFixed(3)})</span></span>
                                                             </div>
                                                             <p className="text-gray-800 leading-relaxed mt-1">
-                                                                {segment ? highlightText(segment.text, segment.id) : m.matchedText}
+                                                                {segment ? highlightText(segment.text, segment.id) : ''}
                                                             </p>
                                                         </div>
                                                     </div>
