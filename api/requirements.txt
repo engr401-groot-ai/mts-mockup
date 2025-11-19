@@ -27,4 +27,5 @@ nltk>=3.9.1
 av<16.0.0
 sympy==1.13.3
 google-cloud-storage
+requests>=2.30.0
 
